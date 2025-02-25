@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Compact Crawl</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #111;
+            color: #eee;
+            font-family: monospace;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+        canvas {
+            border: 1px solid #333;
+            image-rendering: pixelated;
+        }
+        #ui-container {
+            display: flex;
+            flex-direction: column;
+        }
+        #game-container {
+            display: flex;
+            gap: 20px;
+        }
+        #stats {
+            width: 200px;
+        }
+        #message-log {
+            height: 150px;
+            overflow-y: auto;
+            margin-top: 20px;
+            background-color: #222;
+            padding: 10px;
+            border: 1px solid #333;
+        }
+    </style>
+</head>
+<body>
+    <div id="ui-container">
+        <h1>Compact Crawl</h1>
+        <div id="game-container">
+            <canvas id="game-canvas" width="800" height="600"></canvas>
+            <div id="stats">
+                <h2>Stats</h2>
+                <div id="player-stats">Loading...</div>
+            </div>
+        </div>
+        <div id="message-log">
+            Welcome to Compact Crawl!
+        </div>
+    </div>
+
+    <script src="utils.js"></script>
+    <script src="data.js"></script>
+    <script src="assets.js"></script>
+    <script src="entities.js"></script>
+    <script src="dungeons.js"></script>
+    <script src="ui.js"></script>
+    <script src="game.js"></script>
+</body>
+</html>
