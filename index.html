@@ -1,3 +1,4 @@
+<!-- compact-crawl/index.html - Main game container and entry point -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -7,58 +8,96 @@
     <style>
         body {
             margin: 0;
-            padding: 0;
+            padding: 20px;
             background-color: #111;
             color: #eee;
             font-family: monospace;
             display: flex;
             justify-content: center;
             align-items: center;
-            height: 100vh;
+            min-height: 100vh;
         }
-        canvas {
-            border: 1px solid #333;
-            image-rendering: pixelated;
-        }
-        #ui-container {
-            display: flex;
-            flex-direction: column;
-        }
+        
         #game-container {
-            display: flex;
-            gap: 20px;
-        }
-        #stats {
-            width: 200px;
-        }
-        #message-log {
-            height: 150px;
-            overflow-y: auto;
-            margin-top: 20px;
+            display: grid;
+            grid-template-rows: auto 1fr auto;
+            grid-template-columns: 3fr 1fr;
+            gap: 10px;
+            width: 96vmin; /* Using vmin to ensure visibility on all screens */
+            height: 72vmin; /* 4:3 aspect ratio */
+            max-width: 1200px;
             background-color: #222;
             padding: 10px;
+            border: 1px solid #444;
+        }
+        
+        #game-title {
+            grid-column: span 2;
+            text-align: center;
+            margin: 0 0 10px 0;
+            color: #ff9;
+        }
+        
+        #game-display {
+            grid-row: 2;
+            grid-column: 1;
             border: 1px solid #333;
+            background-color: #111;
+            overflow: hidden;
+        }
+        
+        #stats-panel {
+            grid-row: 2;
+            grid-column: 2;
+            background-color: #222;
+            border: 1px solid #333;
+            padding: 10px;
+        }
+        
+        #message-log {
+            grid-row: 3;
+            grid-column: span 2;
+            height: 100px;
+            overflow-y: auto;
+            background-color: #222;
+            border: 1px solid #333;
+            padding: 5px 10px;
+        }
+        
+        h2 {
+            color: #ff9;
+            margin-top: 0;
+            font-size: 1.2em;
+        }
+        
+        canvas {
+            display: block;
+            max-width: 100%;
+            max-height: 100%;
+            image-rendering: pixelated;
         }
     </style>
 </head>
 <body>
-    <div id="ui-container">
-        <h1>Compact Crawl</h1>
-        <div id="game-container">
-            <canvas id="game-canvas" width="800" height="600"></canvas>
-            <div id="stats">
-                <h2>Stats</h2>
-                <div id="player-stats">Loading...</div>
-            </div>
+    <div id="game-container">
+        <h1 id="game-title">Compact Crawl</h1>
+        
+        <div id="game-display"></div>
+        
+        <div id="stats-panel">
+            <h2>Stats</h2>
+            <div id="player-stats">Loading...</div>
         </div>
+        
         <div id="message-log">
-            Welcome to Compact Crawl!
+            Welcome to Compact Crawl!<br>
+            Welcome to the dungeon!
         </div>
     </div>
 
-    <script src="utils.js"></script>
-    <script src="data.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/rot-js@2/dist/rot.js"></script>
     <script src="assets.js"></script>
+    <script src="data.js"></script>
     <script src="entities.js"></script>
     <script src="dungeons.js"></script>
     <script src="ui.js"></script>
