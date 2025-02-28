@@ -4,6 +4,61 @@
 
 This document outlines the architecture and design for a browser-based roguelike game inspired by Dungeon Crawl Stone Soup (DCSS), but with a smaller scope to fit within a 10-file constraint. The game leverages HTML5 Canvas and JavaScript to create a turn-based dungeon crawler with procedural generation and infinite exploration capabilities.
 
+## Current Implementation Status
+
+- [x] Title screen with ASCII art logo
+- [x] Basic project structure and files
+- [x] rot.js integration
+- [x] Game map generation with proper boundaries
+- [x] Player movement mechanics
+- [ ] Proper dungeon generation with rooms (in progress)
+- [ ] Basic combat system (in progress)
+- [ ] Monster AI (in progress)
+- [ ] Items and inventory
+- [ ] Game progression
+
+## Recent Fixes & Improvements
+
+### Map Boundary Fixes
+- Fixed issue with missing right and bottom walls where player could move into undefined areas
+- Properly calculated map bounds based on UI space constraints
+- Set explicit right wall boundary at x=75 (instead of using display width)
+- Added debugging logs for wall generation to verify boundaries
+- Added robust movement validation to prevent out-of-bounds movement
+
+### UI Improvements
+- Fixed title screen input handling to properly transition to game
+- Improved message display in the game area
+- Created clear separation between game area and UI elements
+- Made sure UI elements don't cover gameplay area
+- Added consistent visual styling for walls, floors, and entities
+
+### Core Game Loop Fixes
+- Fixed player movement and turn handling
+- Implemented proper FOV calculation
+- Ensured proper display of visible vs. explored tiles
+- Added better logging for debugging
+
+### Key Technical Insights
+1. **Proper Boundary Calculation**: The game needed explicit calculation of playable area boundaries that:
+   - Accounted for top UI space (2 rows)
+   - Accounted for bottom message area (3 rows + 1 divider)
+   - Restricted right boundary to x=75 to ensure visibility
+   - Used inclusive bounds (minX/maxX, minY/maxY) for clarity
+
+2. **Multiple Validation Layers**: Player movement needed multiple checks:
+   - Bounds check (x/y within valid map area)
+   - Map content check (tile exists in the map)
+   - Tile type check (only allow movement to floor tiles)
+
+3. **Consistent Drawing Order**:
+   - Draw UI background first
+   - Draw map tiles
+   - Draw items on top of map
+   - Draw entities on top of items
+   - Draw player last (always visible)
+   - Draw UI elements and text
+
 ## Core Design Philosophy
 
 - **Minimalist Codebase**: All game code, documentation, and design must fit within 10 files.
@@ -294,50 +349,100 @@ The dungeon consists of several key areas:
 - **Consumables**: One-time use items for various effects
 - **Scrolls and Potions**: Magical items with powerful effects
 
+## To-Do List & Features Roadmap
+
+### Critical Fixes
+- [x] Fix dungeon rendering after title screen
+- [x] Fix player movement and input handling
+- [x] Fix FOV calculation and exploration mechanics
+- [x] Fix map boundaries to prevent off-screen movement
+
+### Core Gameplay (Phase 1)
+- [x] Working dungeon exploration with basic rectangular room
+- [x] Turn-based movement
+- [ ] Implement proper dungeon generation with multiple rooms
+- [ ] Combat mechanics
+- [ ] Basic monster AI
+- [ ] Death and game over state
+
+### Extended Features (Phase 2)
+- [ ] Multiple dungeon branches
+- [ ] Inventory system
+- [ ] Items and equipment
+- [ ] Character progression
+- [ ] Monster variety
+- [ ] Special abilities
+
+### Polish & UI (Phase 3)
+- [ ] Message logging improvements
+- [ ] Sound effects
+- [ ] UI polish
+- [ ] Help screens and tutorials
+- [ ] Save/load system
+
 ## Technical Implementation
 
 ### Rendering Approach
 
 The game uses HTML5 Canvas for rendering, with a tile-based approach:
 
-- Each game element is represented by a sprite
-- The visible area is centered on the player
-- Only visible tiles are rendered
+- Each game element is represented by an ASCII character
+- Fixed-width display grid (80x30)
+- Top 2 rows reserved for stats and UI
+- Bottom 4 rows reserved for messages and divider
 - Field of view calculations determine what the player can see
+- Right boundary limited to column 75 for optimal display
 
-### Infinite Dungeon Implementation
+### Map Generation
 
-To manage potentially infinite exploration areas while respecting browser memory limitations:
+The current implementation uses a simple rectangular room with walls as a placeholder. The next step will implement:
 
-1. **Chunking**: The world is divided into grid chunks
-2. **Deterministic Generation**: Each chunk is generated from a seed based on its coordinates
-3. **Memory Management**:
-   - Only chunks near the player are kept in memory
-   - Distant chunks are serialized and stored
-   - When a player returns to a previously visited area, the chunk is regenerated with the same seed
-   - Important changes (like killed monsters or collected items) are tracked separately
+1. **Room-based Generation**: Using rot.js's Digger algorithm to create multiple connected rooms
+2. **Proper Door Placement**: Connecting rooms with corridors and doors
+3. **Monster Placement**: Strategic monster placement in rooms (avoiding the starting room)
+4. **Item Placement**: Distributing items throughout the dungeon
 
-### Save System
+## Comparison to DCSS
 
-- **Local Storage**: Game state is saved to browser's localStorage
-- **Auto-save**: Game state is saved after significant actions
-- **Permadeath**: When character dies, save is deleted
+Compact Crawl aims to maintain the spirit of DCSS while dramatically reducing scope:
 
-## User Interface
+| Feature | DCSS | Compact Crawl |
+|---------|------|---------------|
+| Races | 27+ | None (human only) |
+| Classes | 26+ | None (fighter only) |
+| Dungeon Branches | 18+ | 3-5 |
+| Items | Hundreds | Dozens |
+| Gods | 24+ | None |
+| Magic System | Complex, 8 schools | None |
+| File Count | Thousands | 10 |
 
-- **Game View**: Main play area showing the dungeon
-- **Stats Panel**: Shows player health, stats, and status effects
-- **Message Log**: Recent game events and messages
-- **Mini-map**: (Optional) Small map showing explored areas
-- **Context Menu**: Appears when interacting with objects
+## Development Process
 
-## Development Priorities
+### Current Development Phase
+**Early Development - Core Gameplay**
 
-1. Core engine and game loop
-2. Basic dungeon generation
-3. Player movement and combat
-4. Monster AI
-5. Items and inventory
-6. Standard branch generation
-7. Infinite branch mechanics
-8. UI polish and effects
+Our current milestone is getting the basic dungeon exploration working:
+1. Title screen (✓ Completed)
+2. Basic map with proper boundaries (✓ Completed)
+3. Player movement and FOV (✓ Completed)
+4. Turn-based game loop (✓ Completed)
+5. Basic monster placement and AI (In Progress)
+6. Basic combat mechanics (In Progress)
+
+### Testing and Debugging
+
+Current focus areas:
+1. Implement proper dungeon generation with multiple rooms
+2. Add monster AI for combat and movement
+3. Implement basic item system
+
+## Future Considerations
+
+- Performance optimization for larger dungeons
+- Mobile/touch support
+- Highscore system
+- Daily challenges
+
+---
+
+Document updated: July 2023
