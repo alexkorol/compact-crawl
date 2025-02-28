@@ -1,4 +1,4 @@
-<!-- compact-crawl/index.html - Main game container and entry point -->
+<!-- compact-crawl/index.html - Main game container with seamless layout -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -8,7 +8,7 @@
     <style>
         body {
             margin: 0;
-            padding: 20px;
+            padding: 0;
             background-color: #111;
             color: #eee;
             font-family: monospace;
@@ -16,91 +16,116 @@
             justify-content: center;
             align-items: center;
             min-height: 100vh;
+            overflow: hidden;
         }
         
         #game-container {
-            display: grid;
-            grid-template-rows: auto 1fr auto;
-            grid-template-columns: 3fr 1fr;
-            gap: 10px;
-            width: 96vmin; /* Using vmin to ensure visibility on all screens */
+            display: flex;
+            flex-direction: column;
+            width: 96vmin;
             height: 72vmin; /* 4:3 aspect ratio */
             max-width: 1200px;
-            background-color: #222;
-            padding: 10px;
-            border: 1px solid #444;
-        }
-        
-        #game-title {
-            grid-column: span 2;
-            text-align: center;
-            margin: 0 0 10px 0;
-            color: #ff9;
+            position: relative;
         }
         
         #game-display {
-            grid-row: 2;
-            grid-column: 1;
-            border: 1px solid #333;
+            flex: 1;
             background-color: #111;
             overflow: hidden;
         }
         
-        #stats-panel {
-            grid-row: 2;
-            grid-column: 2;
-            background-color: #222;
-            border: 1px solid #333;
-            padding: 10px;
+        #game-ui {
+            position: absolute;
+            pointer-events: none; /* Let clicks pass through to the game */
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
         }
         
-        #message-log {
-            grid-row: 3;
-            grid-column: span 2;
-            height: 100px;
-            overflow-y: auto;
-            background-color: #222;
-            border: 1px solid #333;
+        #stats-overlay {
             padding: 5px 10px;
+            background: rgba(0, 0, 0, 0.5);
+            font-size: 0.9em;
+            align-self: flex-end;
+            margin: 5px;
+            border-radius: 3px;
         }
         
-        h2 {
-            color: #ff9;
-            margin-top: 0;
-            font-size: 1.2em;
+        #message-overlay {
+            margin-top: auto; /* Push to bottom */
+            padding: 5px 10px;
+            background: rgba(0, 0, 0, 0.7);
+            max-height: 80px;
+            overflow-y: auto;
+        }
+        
+        /* Inventory and skills screens */
+        .game-screen {
+            position: absolute;
+            top: 10%;
+            left: 10%;
+            width: 80%;
+            height: 80%;
+            background: rgba(0, 0, 0, 0.9);
+            border: 1px solid #555;
+            padding: 10px;
+            display: none;
+            z-index: 10;
+            pointer-events: auto; /* Make the modal clickable */
         }
         
         canvas {
             display: block;
-            max-width: 100%;
-            max-height: 100%;
             image-rendering: pixelated;
         }
     </style>
 </head>
 <body>
     <div id="game-container">
-        <h1 id="game-title">Compact Crawl</h1>
-        
         <div id="game-display"></div>
         
-        <div id="stats-panel">
-            <h2>Stats</h2>
-            <div id="player-stats">Loading...</div>
+        <div id="game-ui">
+            <div id="stats-overlay">
+                <div id="player-stats">Loading...</div>
+            </div>
+            <div id="message-overlay">
+                Welcome to Compact Crawl!<br>
+                Use arrow keys to move.
+            </div>
         </div>
         
-        <div id="message-log">
-            Welcome to Compact Crawl!<br>
-            Welcome to the dungeon!
+        <div id="inventory-screen" class="game-screen">
+            <h2>Inventory</h2>
+            <div id="inventory-content"></div>
+            <p>Press [I] to close</p>
+        </div>
+        
+        <div id="skills-screen" class="game-screen">
+            <h2>Skills & Abilities</h2>
+            <div id="skills-content"></div>
+            <p>Press [S] to close</p>
         </div>
     </div>
 
+    <!-- Load in correct dependency order -->
     <script src="https://cdn.jsdelivr.net/npm/rot-js@2/dist/rot.js"></script>
-    <script src="assets.js"></script>
-    <script src="data.js"></script>
-    <script src="entities.js"></script>
-    <script src="dungeons.js"></script>
-    <script src="ui.js"></script>
-    <script src="game.js"></script>
+    <script src="assets.js"></script>        <!-- CONFIG and utility functions -->
+    <script src="data.js"></script>         <!-- Game data management -->
+    <script src="entities.js"></script>      <!-- Entity classes -->
+    <script src="dungeons.js"></script>      <!-- Dungeon generation -->
+    <script src="ui.js"></script>           <!-- UI handlers -->
+    <script src="game.js"></script>         <!-- Main game loop -->
+
+    <!-- Initialize game immediately after scripts are loaded -->
+    <script>
+        window.addEventListener('load', () => {
+            window.game = new Game();
+            // Clear loading message
+            document.getElementById('message-overlay').innerHTML = 'Welcome to Compact Crawl!<br>Use arrow keys or hjkl to move.';
+        });
+    </script>
 </body>
 </html>

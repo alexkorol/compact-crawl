@@ -1,4 +1,4 @@
-// compact-crawl/entities.js - Player, monster, and item definitions
+// compact-crawl/entities.js - Entity definitions
 class Entity {
     constructor(x, y, symbol, color) {
         this.x = x;
@@ -6,102 +6,101 @@ class Entity {
         this.symbol = symbol;
         this.color = color;
     }
-    
-    draw() {
-        game.display.draw(this.x, this.y, this.symbol, this.color);
-    }
-    
-    moveTo(x, y) {
-        // Check if the target position is walkable
-        const key = `${x},${y}`;
-        if (game.map[key] === '.') {
-            this.x = x;
-            this.y = y;
-            return true;
-        }
-        return false;
-    }
 }
 
 class Player extends Entity {
     constructor(x, y) {
         super(x, y, '@', '#ff0');
-        this.hp = 30;
-        this.maxHp = 30;
-        this.attack = 5;
-        this.defense = 2;
+        this.hp = 10;
+        this.maxHp = 10;
         this.level = 1;
-        this.exp = 0;
-        this.inventory = [];
+        this.visibleTiles = {};  // Track visible tiles
+        this.fov = new ROT.FOV.PreciseShadowcasting(
+            (x, y) => {
+                const key = `${x},${y}`;
+                return key in game.map && game.map[key] !== '#';
+            }
+        );
     }
-    
+
     act() {
+        // Compute FOV when it's player's turn
+        this.computeFOV();
         game.engine.lock();
-        // Player's turn is managed by the input handler
     }
-    
+
+    computeFOV() {
+        // Clear current visible tiles
+        this.visibleTiles = {};
+        
+        console.log("Computing FOV from", this.x, this.y);
+        
+        // Compute new FOV
+        this.fov.compute(this.x, this.y, 8, (x, y, r, visibility) => {
+            const key = `${x},${y}`;
+            console.log("FOV includes", x, y);
+            this.visibleTiles[key] = true;
+            game.explored[key] = true;
+        });
+        
+        console.log("Visible tiles after FOV:", Object.keys(this.visibleTiles).length);
+        
+        return this.visibleTiles;
+    }
+
     handleInput(e) {
         const keyMap = {
-            'ArrowUp': 0,
-            'ArrowRight': 1,
-            'ArrowDown': 2,
-            'ArrowLeft': 3,
-            'k': 0,
-            'l': 1,
-            'j': 2,
-            'h': 3
+            'ArrowUp': [0, -1],
+            'ArrowDown': [0, 1],
+            'ArrowLeft': [-1, 0],
+            'ArrowRight': [1, 0],
+            'k': [0, -1],
+            'j': [0, 1],
+            'h': [-1, 0],
+            'l': [1, 0]
         };
-        
-        // Movement
+
         if (e.key in keyMap) {
-            const dir = keyMap[e.key];
-            const dirs = [
-                [0, -1],  // up
-                [1, 0],   // right
-                [0, 1],   // down
-                [-1, 0]   // left
-            ];
-            
-            const [dx, dy] = dirs[dir];
+            const [dx, dy] = keyMap[e.key];
             const newX = this.x + dx;
             const newY = this.y + dy;
             
-            if (this.moveTo(newX, newY)) {
-                game.addMessage(`You move ${['up', 'right', 'down', 'left'][dir]}.`);
+            const key = `${newX},${newY}`;
+            if (game.map[key] === '.') {
+                this.x = newX;
+                this.y = newY;
                 return true;
-            } else {
-                game.addMessage("There's a wall in the way.");
-                return false;
             }
         }
-        
         return false;
     }
 }
 
 class Monster extends Entity {
-    constructor(x, y, type, name, symbol, color, hp, attack) {
-        super(x, y, symbol, color);
-        this.type = type;
-        this.name = name;
-        this.hp = hp;
-        this.attack = attack;
+    constructor(x, y, data) {
+        super(x, y, data.symbol, data.color);
+        this.name = data.name;
+        this.hp = data.hp;
+        this.maxHp = data.maxHp;
+        this.attack = data.attack;
+        this.defense = data.defense;
+        this.exp = data.exp;
     }
-    
+
     act() {
-        // Simple random movement for now
-        const dirs = [
-            [0, -1],  // up
-            [1, 0],   // right
-            [0, 1],   // down
-            [-1, 0]   // left
-        ];
-        
-        const dir = Math.floor(Math.random() * 4);
-        const [dx, dy] = dirs[dir];
-        const newX = this.x + dx;
-        const newY = this.y + dy;
-        
-        this.moveTo(newX, newY);
+        // Only act if visible to player
+        if (game.isVisible(this.x, this.y)) {
+            // Simple random movement
+            const dirs = [[0,-1], [1,0], [0,1], [-1,0]];
+            const dir = dirs[Math.floor(Math.random() * dirs.length)];
+            const newX = this.x + dir[0];
+            const newY = this.y + dir[1];
+            
+            const key = `${newX},${newY}`;
+            if (game.map[key] === '.') {
+                this.x = newX;
+                this.y = newY;
+            }
+        }
     }
 }

@@ -1,84 +1,125 @@
 // compact-crawl/game.js - Core game engine and main loop
 class Game {
     constructor() {
-        this.calculateDisplaySize();
-        
         this.display = new ROT.Display({
-            width: this.displayWidth,
-            height: this.displayHeight,
-            fontSize: this.fontSize,
+            width: 80,
+            height: 30,
+            fontSize: 16,
             fontFamily: "monospace",
-            forceSquareRatio: true,
+            spacing: 1.0,
             bg: "#111"
         });
-        document.getElementById('game-display').appendChild(this.display.getContainer());
+
+        const displayContainer = document.getElementById('game-display');
+        displayContainer.innerHTML = '';
+        displayContainer.appendChild(this.display.getContainer());
+
+        this.gameState = 'title';
+        this.showTitleScreen();
+
+        // Single event listener for all game states
+        window.addEventListener('keydown', (e) => {
+            console.log('Key pressed:', e.key, 'Game state:', this.gameState);
+            
+            if (this.gameState === 'title') {
+                console.log('Starting game...');
+                this.startGame();
+            } else if (this.gameState === 'playing' && this.engine.locked) {
+                console.log('Processing player input...');
+                const action = this.player.handleInput(e);
+                if (action) {
+                    this.player.computeFOV();
+                    this.draw();
+                    this.updateStats();
+                    this.engine.unlock();
+                }
+            }
+        });
+    }
+
+    showTitleScreen() {
+        this.display.clear();
         
+        const titleArt = [
+            "____                                 _ ",
+            "/ ___|___  _ __ ___  _ __   __ _  ___| |_ ",
+            "| |   / _ \\| '_ ` _ \\| '_ \\ / _` |/ __| __|",
+            "| |__| (_) | | | | | | |_) | (_| | (__| |_ ",
+            "\\____\\___/|_| |_| |_| .__/ \\__,_|\\___|\\__|",
+            "            ____                       |_|              ",                      
+            "",
+            "          ____                    _       ",
+            "         / ___|_ __ __ ___      _| |        ",
+            "        | |   | '__/ _` \\ \\ /\\ / / |         ",
+            "        | |__ | | | (_| |\\ V  V /| |          ",
+            "         \\____|_|  \\__,_| \\_/\\_/ |_|        ",
+            "",
+            "",
+            "        @ PRESS ANY KEY TO DESCEND @"
+        ];
+        
+        const startY = Math.floor((this.display.getOptions().height - titleArt.length) / 2) - 2;
+        
+        // Draw title with shadow effect
+        titleArt.forEach((line, i) => {
+            const x = Math.floor((this.display.getOptions().width - line.length) / 2);
+            // Draw shadow
+            this.display.drawText(x + 1, startY + i + 1, `%c{#222}${line}`);
+            // Draw main text
+            this.display.drawText(x, startY + i, `%c{#ff9}${line}`);
+        });
+        
+        // Make press key message blink
+        let visible = true;
+        const blink = setInterval(() => {
+            if (this.gameState !== 'title') {
+                clearInterval(blink);
+                return;
+            }
+            const message = "        @ PRESS ANY KEY TO DESCEND @";
+            const messageX = Math.floor((this.display.getOptions().width - message.length) / 2);
+            const messageY = startY + titleArt.length - 1;
+            this.display.drawText(messageX, messageY, 
+                visible ? `%c{#fff}${message}` : " ".repeat(message.length));
+            visible = !visible;
+        }, 500);
+    }
+
+    startGame() {
+        console.log('Initializing new game');
+        this.gameState = 'playing';
+
+        // Initialize core systems
         this.scheduler = new ROT.Scheduler.Simple();
         this.engine = new ROT.Engine(this.scheduler);
         this.dungeonGen = new DungeonGenerator(this);
+        this.entities = new Set();
+        this.level = 1;
+        this.explored = {};
+
+        // Generate initial dungeon
+        const dungeon = this.dungeonGen.generateStandard(80, 30, this.level);
+        console.log('Dungeon generated:', dungeon);
+        this.map = dungeon.map;
+
+        // Create player
+        this.player = new Player(dungeon.startPosition.x, dungeon.startPosition.y);
+        this.entities.add(this.player);
+        this.scheduler.add(this.player, true);
         
-        // Setup message log functions
+        // Initial FOV computation
+        this.player.computeFOV();
+        
+        // Start game systems
         this.setupMessaging();
+        this.addMessage("Welcome to the dungeon!", "#ff9");
+        this.updateStats();
+        this.draw();
         
-        // Handle window resize
-        window.addEventListener('resize', () => {
-            this.handleResize();
-        });
-        
-        this.init();
+        console.log('Starting game engine');
+        this.engine.start();
     }
-    
-    calculateDisplaySize() {
-        // Get the container dimensions
-        const displayEl = document.getElementById('game-display');
-        const rect = displayEl.getBoundingClientRect();
-        
-        // Calculate how many characters can fit
-        // Using a slightly smaller size to ensure it fits well
-        this.fontSize = Math.floor(rect.height / 30); // Aim for about 30 rows
-        
-        // Calculate width and height based on container size and font size
-        this.displayWidth = Math.floor(rect.width / this.fontSize * 1.6); // Adjust for character width
-        this.displayHeight = Math.floor(rect.height / this.fontSize);
-        
-        // Ensure minimum size
-        this.displayWidth = Math.max(40, this.displayWidth);
-        this.displayHeight = Math.max(20, this.displayHeight);
-        
-        console.log(`Display size: ${this.displayWidth}x${this.displayHeight}, Font size: ${this.fontSize}`);
-    }
-    
-    handleResize() {
-        // Store old values
-        const oldWidth = this.displayWidth;
-        const oldHeight = this.displayHeight;
-        const oldFontSize = this.fontSize;
-        
-        // Calculate new display size
-        this.calculateDisplaySize();
-        
-        // Only rebuild if dimensions changed
-        if (oldWidth !== this.displayWidth || 
-            oldHeight !== this.displayHeight || 
-            oldFontSize !== this.fontSize) {
-            
-            const container = this.display.getContainer();
-            container.remove();
-            
-            this.display = new ROT.Display({
-                width: this.displayWidth,
-                height: this.displayHeight,
-                fontSize: this.fontSize,
-                fontFamily: "monospace",
-                forceSquareRatio: true,
-                bg: "#111"
-            });
-            document.getElementById('game-display').appendChild(this.display.getContainer());
-            
-            this.draw();
-        }
-    }
-    
+
     setupMessaging() {
         this.messages = [];
         
@@ -106,20 +147,34 @@ class Game {
     }
 
     init() {
-        this.level = 1;
-        this.map = {};
-        const dungeon = this.dungeonGen.generateStandard(this.displayWidth, this.displayHeight, this.level);
+        console.log('Initializing game world');
+        
+        // Generate dungeon with proper dimensions
+        const dungeon = this.dungeonGen.generateStandard(
+            this.display.getOptions().width,
+            this.display.getOptions().height,
+            this.level
+        );
+        
+        console.log("Generated dungeon:", dungeon);
+        console.log("Map data:", Object.keys(dungeon.map).length, "cells");
+        console.log("Start position:", dungeon.startPosition);
+        
         this.map = dungeon.map;
         
+        // Create player at start position
         this.player = new Player(dungeon.startPosition.x, dungeon.startPosition.y);
+        
+        console.log("Player created at", this.player.x, this.player.y);
+        
+        this.entities.add(this.player);
         this.scheduler.add(this.player, true);
         
-        this.entities = new Set([this.player]);
-        this.generateMonsters(dungeon.rooms);
+        // Compute initial FOV
+        this.player.computeFOV();
         
-        this.updateStats();
+        // Start game engine
         this.engine.start();
-        this.draw();
     }
 
     updateStats() {
@@ -137,24 +192,32 @@ class Game {
     }
 
     draw() {
+        if (this.gameState !== 'playing') return;
+        
+        console.log('Drawing game state');
         this.display.clear();
         
-        // Draw map
+        // Draw the map (floors and walls)
         for (let key in this.map) {
             const [x, y] = key.split(',').map(Number);
-            this.display.draw(x, y, this.map[key]);
+            const tile = this.map[key];
+            
+            // Always draw tiles for debugging
+            this.display.draw(x, y, tile, tile === '#' ? '#666' : '#aaa');
         }
         
-        // Draw entities
-        for (let entity of this.entities) {
-            entity.draw();
-        }
+        // Draw the player
+        this.display.draw(this.player.x, this.player.y, '@', '#ff0');
+        
+        console.log('Draw complete');
     }
 
     handleInput(e) {
         if (this.engine.locked) {
             const action = this.player.handleInput(e);
             if (action) {
+                // Recompute FOV after movement
+                this.player.computeFOV();
                 this.draw();
                 this.updateStats();
                 this.engine.unlock();
@@ -187,15 +250,42 @@ class Game {
             }
         }
     }
+
+    isVisible(x, y) {
+        const key = `${x},${y}`;
+        return this.player.visibleTiles[key];
+    }
+    
+    getMonsterAt(x, y) {
+        for (let entity of this.entities) {
+            if (entity !== this.player && entity instanceof Monster && 
+                entity.x === x && entity.y === y) {
+                return entity;
+            }
+        }
+        return null;
+    }
+    
+    removeMonster(monster) {
+        this.entities.delete(monster);
+        this.scheduler.remove(monster);
+    }
+    
+    gameOver() {
+        this.addMessage("Game Over!", CONFIG.colors.ui.warning);
+        this.gameData.deleteSaveData();
+        this.engine.lock();
+        // Could add restart option here
+    }
+}
+
+// Simple distance calculator function
+function calculateDistance(x1, y1, x2, y2) {
+    return Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
 }
 
 // Initialize game
 window.addEventListener('load', () => {
-    const game = new Game();
-    window.game = game;
-    
-    // Input handling
-    window.addEventListener('keydown', (e) => {
-        game.handleInput(e);
-    });
+    console.log('Creating new game instance');
+    window.game = new Game();
 });
