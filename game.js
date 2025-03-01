@@ -414,7 +414,7 @@ class Game {
             }
             
             // Check if the tile is walkable (not a wall)
-            if (this.map[key] !== '.') {
+            if (this.map[key] !== this.FLOOR_TILE) {
                 console.log(`Movement to non-floor tile: ${this.map[key]}`);
                 return;
             }
@@ -865,12 +865,12 @@ class Game {
         this.addMessage("You died!", CONFIG.colors.ui.warning);
         this.addMessage("Game over...", CONFIG.colors.ui.warning);
         
-        // Draw final state
-        this.draw();
+        // Draw final state using drawGame() for consistency
+        this.drawGame();
         
         // Show game over message
         const gameOverY = Math.floor(this.display.getOptions().height / 2);
-        this.display.drawText(0, gameOverY, `%c{${CONFIG.colors.ui.warning}}%b{#000}GAME OVER`.padStart(40));
+        this.display.drawText(0, gameOverY, `%c{${CONFIG.colors.ui.warning}}%b{#000}${"GAME OVER".padStart(40)}`);
         
         // Reset after delay
         setTimeout(() => {

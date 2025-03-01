@@ -165,15 +165,90 @@ class DungeonGenerator {
             
             // 50% chance for each room
             if (Math.random() > 0.5) {
-                // Choose monster based on level
-                const possibleMonsters = Object.entries(MONSTERS)
-                    .filter(([_, data]) => data.level <= level)
-                    .map(([id, _]) => id);
+                // Choose monster based on level and rarity
+                let possibleMonsters = [];
                 
-                const monsterType = pickRandomElement(possibleMonsters);
-                const monsterData = MONSTERS[monsterType];
+                // Filter monsters based on dungeon level
+                for (const [id, data] of Object.entries(MONSTERS)) {
+                    if (data.level <= level) {
+                        // Calculate spawn weight based on monster level and current dungeon level
+                        let weight = 10;
+                        
+                        // Monsters close to current level are more common
+                        const levelDiff = level - data.level;
+                        if (levelDiff === 0) weight = 20;
+                        else if (levelDiff === 1) weight = 15;
+                        else if (levelDiff >= 4) weight = 5;
+                        
+                        // Tentacle monsters and special monsters are rarer
+                        if (data.behavior === "tentacle" || data.behavior === "multi_tentacle") {
+                            weight = Math.max(1, weight - 5);
+                        }
+                        
+                        // Add to possible monsters with weight
+                        for (let j = 0; j < weight; j++) {
+                            possibleMonsters.push(id);
+                        }
+                    }
+                }
                 
-                monsters.push(new Monster(center.x, center.y, monsterData));
+                if (possibleMonsters.length > 0) {
+                    const monsterType = ROT.RNG.getItem(possibleMonsters);
+                    const monsterData = MONSTERS[monsterType];
+                    
+                    // Add tentacle-based monsters to deeper levels
+                    // Force snake on first level for demo purposes
+                    let finalMonsterType = monsterType;
+                    if (level === 1) {
+                        finalMonsterType = "snake"; // Always start with snakes on level 1
+                    } else if (level >= 4 && Math.random() < 0.3) {
+                        finalMonsterType = "kraken"; // Krakens appear from level 4
+                    } else if (level >= 7 && Math.random() < 0.2) {
+                        finalMonsterType = "shoggoth"; // Shoggoths appear from level 7
+                    } else if (level >= 5 && Math.random() < 0.25) {
+                        finalMonsterType = "hydra"; // Hydras appear from level 5
+                    }
+                    
+                    const finalMonsterData = MONSTERS[finalMonsterType];
+                    
+                    // Find suitable position for the monster
+                    let monsterX = center.x;
+                    let monsterY = center.y;
+                    
+                    // For tentacle monsters, ensure there's enough space
+                    if (finalMonsterData.behavior === "tentacle" || finalMonsterData.behavior === "multi_tentacle") {
+                        // Find a position with enough empty space around it
+                        const candidates = [];
+                        for (let y = room.top + 2; y < room.bottom - 2; y++) {
+                            for (let x = room.left + 2; x < room.right - 2; x++) {
+                                let hasSpace = true;
+                                // Check for a 3x3 area of empty space
+                                for (let dy = -1; dy <= 1; dy++) {
+                                    for (let dx = -1; dx <= 1; dx++) {
+                                        const nx = x + dx;
+                                        const ny = y + dy;
+                                        if (nx < room.left || nx >= room.right || 
+                                            ny < room.top || ny >= room.bottom || 
+                                            this.game.map[ny][nx] !== '.') {
+                                            hasSpace = false;
+                                        }
+                                    }
+                                }
+                                if (hasSpace) {
+                                    candidates.push({x, y});
+                                }
+                            }
+                        }
+                        
+                        if (candidates.length > 0) {
+                            const pos = ROT.RNG.getItem(candidates);
+                            monsterX = pos.x;
+                            monsterY = pos.y;
+                        }
+                    }
+                    
+                    monsters.push(new Monster(monsterX, monsterY, finalMonsterData));
+                }
             }
         }
         

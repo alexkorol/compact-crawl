@@ -59,7 +59,8 @@ const MONSTERS = {
         exp: 2,
         level: 1,
         speed: 100,
-        abilities: []
+        abilities: [],
+        behavior: "melee"
     },
     snake: {
         name: "Cave Snake",
@@ -67,20 +68,22 @@ const MONSTERS = {
         color: CONFIG.colors.entities.monster.snake,
         hp: 6,
         maxHp: 6,
-        attack: 3,
+        attack: 2, // Reduced from 3
         defense: 0,
         exp: 3,
         level: 1,
-        speed: 120,
-        abilities: ["poison"]
+        speed: 100, // Reduced from 120 to match player speed
+        abilities: ["poison"],
+        behavior: "serpentine",
+        segments: 4
     },
     goblin: {
         name: "Goblin",
         symbol: "g",
         color: CONFIG.colors.entities.monster.goblin,
-        hp: 8,
-        maxHp: 8,
-        attack: 3,
+        hp: 6, // Reduced from 8
+        maxHp: 6, // Reduced from 8
+        attack: 2, // Reduced from 3
         defense: 1,
         exp: 5,
         level: 2,
@@ -112,6 +115,69 @@ const MONSTERS = {
         level: 5,
         speed: 80,
         abilities: ["regeneration"]
+    },
+    wisp: {
+        name: "Will-o-wisp",
+        symbol: "w",
+        color: "#7af",
+        hp: 3,
+        maxHp: 3,
+        attack: 2,
+        defense: 0,
+        exp: 4,
+        level: 2,
+        speed: 150,
+        abilities: ["lighting"],
+        behavior: "random"
+    },
+    kraken: {
+        name: "Kraken Spawn",
+        symbol: "K",
+        color: "#0af",
+        hp: 15,
+        maxHp: 15,
+        attack: 5,
+        defense: 2,
+        exp: 10,
+        level: 4,
+        speed: 80,
+        abilities: ["grab"],
+        behavior: "tentacle",
+        segments: 6,
+        tentacleColor: ["#089", "#067", "#056", "#045", "#034"]
+    },
+    shoggoth: {
+        name: "Shoggoth",
+        symbol: "S",
+        color: "#a0f", 
+        hp: 30,
+        maxHp: 30,
+        attack: 7,
+        defense: 4,
+        exp: 25,
+        level: 7,
+        speed: 60,
+        abilities: ["dissolve", "split"],
+        behavior: "tentacle",
+        segments: 8,
+        tentacleColor: ["#90d", "#80c", "#70b", "#609", "#508", "#407"]
+    },
+    hydra: {
+        name: "Cave Hydra",
+        symbol: "H",
+        color: "#0c0",
+        hp: 20,
+        maxHp: 20,
+        attack: 6,
+        defense: 3,
+        exp: 15,
+        level: 5, 
+        speed: 90,
+        abilities: ["regrowth"],
+        behavior: "multi_tentacle",
+        segments: 5,
+        heads: 3,
+        tentacleColor: ["#0b0", "#090", "#070", "#050"]
     }
 };
 
