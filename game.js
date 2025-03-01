@@ -13,7 +13,8 @@ class Game {
             fontSize: 16,
             fontFamily: "monospace",
             spacing: 1.0,
-            bg: "#111"
+            bg: "#111",
+            forceSquareRatio: true   // <-- Added to force square tiles
         });
 
         // Add display to container
@@ -41,14 +42,13 @@ class Game {
 
     showTitleScreen() {
         this.display.clear();
-        
         const titleArt = [
             "____                                 _ ",
             "/ ___|___  _ __ ___  _ __   __ _  ___| |_ ",
             "| |   / _ \\| '_ ` _ \\| '_ \\ / _` |/ __| __|",
             "| |__| (_) | | | | | | |_) | (_| | (__| |_ ",
             "\\____\\___/|_| |_| |_| .__/ \\__,_|\\___|\\__|",
-            "            \u00A0\u00A0\u00A0\u00A0                       |_|              ",                   
+            "            \u00A0\u00A0                   |_|              ",                   
             "",
             "\u00A0\u00A0\u00A0          ____                    _           ",
             "\u00A0\u00A0\u00A0         / ___|_ __ __ ___      _| |           ",
@@ -57,34 +57,22 @@ class Game {
             "\u00A0\u00A0\u00A0         \\____|_|  \\__,_| \\_/\\_/ |_|          ",
             "",
             "",
-            "        @ PRESS ANY KEY TO DESCEND @"
+            "\u00A0      @ PRESS ANY KEY TO DESCEND @"
         ];
         
-        const startY = Math.floor((this.display.getOptions().height - titleArt.length) / 2) - 2;
-        
-        // Draw title with shadow effect
+        const columns = this.display.getOptions().width;
+        const shift = 18; // Adjust shift to move the art further left
+        const startY = Math.floor((this.display.getOptions().height - titleArt.length) / 2);
         titleArt.forEach((line, i) => {
-            const x = Math.floor((this.display.getOptions().width - line.length) / 2);
-            // Draw shadow
-            this.display.drawText(x + 1, startY + i + 1, `%c{#222}${line}`);
-            // Draw main text
+            // Subtract a fixed shift value from the center offset
+            const x = Math.max(0, Math.floor((columns - line.length) / 2) - shift);
             this.display.drawText(x, startY + i, `%c{#ff9}${line}`);
         });
-        
-        // Make press key message blink
-        let visible = true;
-        const blink = setInterval(() => {
-            if (this.gameState !== 'title') {
-                clearInterval(blink);
-                return;
-            }
-            const message = "        @ PRESS ANY KEY TO DESCEND @";
-            const messageX = Math.floor((this.display.getOptions().width - message.length) / 2);
-            const messageY = startY + titleArt.length - 1;
-            this.display.drawText(messageX, messageY, 
-                visible ? `%c{#fff}${message}` : " ".repeat(message.length));
-            visible = !visible;
-        }, 500);
+
+        // Add help text below the "PRESS ANY KEY" line
+        const helpText = "(R to restart after game over)";
+        const helpX = Math.max(0, Math.floor((this.display.getOptions().width - helpText.length) / 2));
+        this.display.drawText(helpX, startY + titleArt.length + 1, `%c{#999}${helpText}`);
     }
 
     startGame() {
@@ -93,8 +81,12 @@ class Game {
         // Change state first
         this.gameState = 'playing';
         
-        // Clear the display
+        // Clear the display and reset game state
         this.display.clear();
+        this.entities = new Set();
+        this.items = [];
+        this.explored = {};
+        this.messages = [];
         
         try {
             // Get display dimensions
@@ -105,13 +97,13 @@ class Game {
             const topUIHeight = 2;  // Status bar (2 rows at top)
             const bottomUIHeight = 4;  // Message box (3 rows at bottom) + divider (1 row)
             
-            // Fix the right wall coordinate to 75
-            const rightWallX = 75;
+            // Fix the right wall coordinate to 42 now
+            const rightWallX = 42;
             
             // Calculate bounds - note these are INCLUSIVE
             this.mapBounds = {
                 minX: 0,
-                maxX: rightWallX, // Set right boundary at x=75
+                maxX: rightWallX, // Set right boundary at x=42
                 minY: topUIHeight,
                 maxY: displayHeight - bottomUIHeight - 1
             };
@@ -123,7 +115,7 @@ class Game {
             
             // Fill entire playable area
             for (let y = 0; y < displayHeight; y++) {
-                for (let x = 0; x <= rightWallX; x++) { // Only go up to x=75
+                for (let x = 0; x <= rightWallX; x++) { // Only go up to x=42
                     // Is this within the game area?
                     if (y >= this.mapBounds.minY && y <= this.mapBounds.maxY) {
                         // We're in the game area
@@ -141,8 +133,8 @@ class Game {
                 }
             }
             
-            // Verify right wall is at x=75
-            console.log("Right wall coordinates (should all be at x=75):");
+            // Verify right wall is at x=42
+            console.log("Right wall coordinates (should all be at x=42):");
             for (let y = this.mapBounds.minY; y <= this.mapBounds.maxY; y++) {
                 const key = `${rightWallX},${y}`;
                 console.log(`  ${key}: ${this.map[key] || 'undefined'}`);
@@ -197,21 +189,13 @@ class Game {
             this.turns = 0;
             this.messages = [];
             
-            // Add dummy monster for testing
-            const monster = {
-                x: 45,
-                y: 15,
-                name: "Test Monster",
-                symbol: "M",
-                color: "#f00",
-                hp: 5,
-                attack: 1,
-                defense: 0
-            };
-            this.entities.add(monster);
+            // REMOVE the old dummy monster code and ADD this new code to spawn test monsters
+            // Add goblins for testing - place them in sight of player
+            this.spawnTestMonsters();
             
-            // Setup input handler
-            document.addEventListener('keydown', this.handleKeyDown.bind(this));
+            // Setup input handler - make sure we bind it and store the bound reference
+            this.boundHandleKeyDown = this.handleKeyDown.bind(this);
+            document.addEventListener('keydown', this.boundHandleKeyDown);
             
             // Compute initial FOV
             this.player.computeFOV();
@@ -252,6 +236,36 @@ class Game {
         }
     }
     
+    // Add this new method to spawn test monsters
+    spawnTestMonsters() {
+        // Create test goblin to the right of player
+        if (MONSTERS && MONSTERS.goblin) {
+            const goblin = new Monster(
+                this.player.x + 5,  // Place 5 tiles to the right of player
+                this.player.y,
+                MONSTERS.goblin
+            );
+            
+            console.log("Spawning test goblin at", goblin.x, goblin.y);
+            this.entities.add(goblin);
+            
+            // Add another goblin above the player
+            const goblin2 = new Monster(
+                this.player.x,
+                this.player.y - 3,  // Place 3 tiles above player
+                MONSTERS.goblin
+            );
+            
+            console.log("Spawning second test goblin at", goblin2.x, goblin2.y);
+            this.entities.add(goblin2);
+            
+            // Log total entities
+            console.log("Total entities:", this.entities.size);
+        } else {
+            console.error("ERROR: MONSTERS.goblin is not defined!");
+        }
+    }
+
     drawGame() {
         console.log('Drawing game state');
         
@@ -309,12 +323,26 @@ class Game {
             }
             
             // Draw entities
+            console.log("Drawing entities:", this.entities.size);
             for (const entity of this.entities) {
                 if (entity === this.player) continue; // Draw player last
                 
-                const key = `${entity.x},${entity.y}`;
-                if (this.player.visibleTiles[key]) {
-                    this.display.draw(entity.x, entity.y, entity.symbol || 'E', entity.color || '#f00');
+                console.log("Drawing entity at", entity.x, entity.y, 
+                            "Symbol:", entity.symbol || '?', 
+                            "Is visible:", !!this.player.visibleTiles[`${entity.x},${entity.y}`]);
+                
+                // Make sure entity is within map bounds
+                if (entity.x <= this.mapBounds.maxX && 
+                    entity.y <= this.mapBounds.maxY &&
+                    entity.x >= this.mapBounds.minX &&
+                    entity.y >= this.mapBounds.minY) {
+                        
+                    const key = `${entity.x},${entity.y}`;
+                    if (key in this.player.visibleTiles) {
+                        this.display.draw(entity.x, entity.y, entity.symbol || 'g', entity.color || '#5aa');
+                    }
+                } else {
+                    console.warn("Entity out of bounds:", entity);
                 }
             }
             
@@ -380,6 +408,12 @@ class Game {
         
         console.log('Key pressed:', e.key);
         
+        // If the key is 'r' during game over, restart the game immediately
+        if (e.key === 'r' && this.gameState === 'gameover') {
+            this.startGame();
+            return;
+        }
+        
         const keyMap = {
             'ArrowUp': [0, -1],
             'ArrowDown': [0, 1],
@@ -393,42 +427,58 @@ class Game {
         
         if (e.key in keyMap) {
             const [dx, dy] = keyMap[e.key];
-            const newX = this.player.x + dx;
-            const newY = this.player.y + dy;
-            const key = `${newX},${newY}`;
             
-            // Improved movement validation
-            console.log(`Attempted move to ${newX},${newY}`);
-            
-            // Check if movement is within map bounds - BELT AND SUSPENDERS
-            if (newX < this.mapBounds.minX || newX > this.mapBounds.maxX || 
-                newY < this.mapBounds.minY || newY > this.mapBounds.maxY) {
-                console.log(`Movement outside map bounds (${this.mapBounds.minX},${this.mapBounds.minY})-(${this.mapBounds.maxX},${this.mapBounds.maxY})`);
-                return;
+            // Try moving or attacking
+            if (this.tryPlayerAction(dx, dy)) {
+                // After player action, give monsters their turn
+                this.moveMonsters();
             }
-            
-            // Check if the tile exists in our map (it should, but double check)
-            if (!this.map[key]) {
-                console.log(`Movement to undefined tile at ${key}`);
-                return;
-            }
-            
-            // Check if the tile is walkable (not a wall)
-            if (this.map[key] !== this.FLOOR_TILE) {
-                console.log(`Movement to non-floor tile: ${this.map[key]}`);
-                return;
-            }
-            
-            // Move is valid, update player position
-            this.player.x = newX;
-            this.player.y = newY;
-            this.player.computeFOV();
-            this.drawGame();
-            
-            console.log(`Player moved to ${this.player.x},${this.player.y}`);
         }
     }
-    
+
+    // New method to handle player movement and attacks
+    tryPlayerAction(dx, dy) {
+        const newX = this.player.x + dx;
+        const newY = this.player.y + dy;
+        const key = `${newX},${newY}`;
+        
+        // Check if outside map or into a wall
+        if (!(key in this.map) || this.map[key] === this.WALL_TILE) {
+            console.log(`Cannot move to ${newX},${newY} - wall or out of bounds`);
+            return false;
+        }
+        
+        // Check for monster at target position
+        for (const entity of this.entities) {
+            if (entity !== this.player && entity.x === newX && entity.y === newY) {
+                console.log(`Found monster at ${newX},${newY}, attacking!`);
+                this.attackEntity(entity);
+                this.drawGame(); // Redraw after combat
+                return true;
+            }
+        }
+        
+        // Check for item
+        for (let i = 0; i < this.items.length; i++) {
+            const item = this.items[i];
+            if (item.x === newX && item.y === newY) {
+                // Pick up item
+                this.pickUpItem(item, i);
+                return true;
+            }
+        }
+        
+        // No obstacles, move player
+        console.log(`Moving player to ${newX},${newY}`);
+        this.player.x = newX;
+        this.player.y = newY;
+        this.player.computeFOV();
+        this.turns++;
+        this.drawGame(); // Redraw after movement
+        
+        return true;
+    }
+
     placeEntities(rooms) {
         // Place monsters in rooms (except first room)
         for (let i = 1; i < rooms.length; i++) {
@@ -570,13 +620,25 @@ class Game {
         // Check for wall
         if (this.map[key] === this.WALL_TILE) return false;
         
-        // Check for entity
+        // CRITICAL FIX: Check for monster at the target position
+        let monsterAtTarget = false;
+        let targetMonster = null;
+        
         for (const entity of this.entities) {
             if (entity !== this.player && entity.x === newX && entity.y === newY) {
-                // Attack entity
-                this.attackEntity(entity);
-                return true;
+                monsterAtTarget = true;
+                targetMonster = entity;
+                console.log(`Found monster at target position: ${entity.name || "Unknown Monster"}`);
+                break;
             }
+        }
+        
+        // If there's a monster, attack it
+        if (monsterAtTarget && targetMonster) {
+            console.log("Attacking monster at", newX, newY);
+            this.attackEntity(targetMonster);
+            this.drawGame();
+            return true;
         }
         
         // Check for item
@@ -595,43 +657,44 @@ class Game {
         this.player.computeFOV();
         this.turns++;
         
-        // Process monsters
+        // After player moves, give monsters a turn
         this.moveMonsters();
         
         return true;
     }
-    
+
     attackEntity(entity) {
         // Calculate damage
-        const damage = Math.max(1, this.player.attack - entity.defense);
+        const damage = Math.max(1, this.player.attack - (entity.defense || 0));
+        
+        console.log(`Player attacks ${entity.name} for ${damage} damage`);
         
         // Apply damage
         entity.hp -= damage;
         
         // Add message
-        this.addMessage(`You hit the ${entity.name} for ${damage} damage.`);
+        this.addMessage(`You hit the ${entity.name || 'monster'} for ${damage} damage.`);
         
         // Check if entity is dead
         if (entity.hp <= 0) {
-            this.addMessage(`You killed the ${entity.name}!`, CONFIG.colors.ui.highlight);
+            this.addMessage(`You killed the ${entity.name || 'monster'}!`, CONFIG.colors.ui.highlight);
             
             // Remove entity
             this.entities.delete(entity);
-            this.scheduler.remove(entity);
             
             // Gain experience and gold
-            this.player.exp += entity.exp;
-            this.player.gold = (this.player.gold || 0) + Math.floor(Math.random() * entity.exp) + 1;
+            this.player.exp += entity.exp || 1;
+            this.player.gold = (this.player.gold || 0) + Math.floor(Math.random() * (entity.exp || 1)) + 1;
             
             // Check for level up
             this.checkLevelUp();
         } else {
             // Entity attacks back
-            const entityDamage = Math.max(1, entity.attack - this.player.defense);
+            const entityDamage = Math.max(1, (entity.attack || 1) - this.player.defense);
             this.player.hp -= entityDamage;
             
             // Add message
-            this.addMessage(`The ${entity.name} hits you for ${entityDamage} damage.`, CONFIG.colors.ui.warning);
+            this.addMessage(`The ${entity.name || 'monster'} hits you for ${entityDamage} damage.`, CONFIG.colors.ui.warning);
             
             // Check if player is dead
             if (this.player.hp <= 0) {
@@ -639,7 +702,7 @@ class Game {
             }
         }
     }
-    
+
     pickUpItem(item, index) {
         switch (item.type) {
             case 'potion':
@@ -699,46 +762,67 @@ class Game {
     }
     
     moveMonsters() {
-        // Process monster movement
+        console.log("Processing monster turns...");
+        
+        // Loop through all entities and move monsters that are visible
         for (const entity of this.entities) {
             if (entity === this.player) continue;
             
-            // Only move if in FOV
             const key = `${entity.x},${entity.y}`;
-            if (!(key in this.player.visibleTiles)) continue;
+            const isVisible = key in this.player.visibleTiles;
             
-            // Simple path to player
-            const astar = new ROT.Path.AStar(this.player.x, this.player.y, (x, y) => {
-                const key = `${x},${y}`;
-                return key in this.map && this.map[key] !== this.WALL_TILE;
-            });
+            console.log(`Processing monster at ${entity.x},${entity.y}, visible: ${isVisible}`);
             
-            const path = [];
-            astar.compute(entity.x, entity.y, (x, y) => {
-                path.push([x, y]);
-            });
-            
-            // Skip first position (current)
-            if (path.length > 1) {
-                const [newX, newY] = path[1];
+            if (isVisible) {
+                // Check if monster is adjacent to player
+                const dx = this.player.x - entity.x;
+                const dy = this.player.y - entity.y;
+                const isAdjacent = Math.abs(dx) <= 1 && Math.abs(dy) <= 1;
                 
-                // Check if new position is player
-                if (newX === this.player.x && newY === this.player.y) {
+                if (isAdjacent) {
                     // Attack player
                     const damage = Math.max(1, entity.attack - this.player.defense);
                     this.player.hp -= damage;
+                    this.addMessage(`The ${entity.name || "monster"} attacks you for ${damage} damage.`, CONFIG.colors.ui.warning);
                     
-                    this.addMessage(`The ${entity.name} hits you for ${damage} damage.`, CONFIG.colors.ui.warning);
-                    
-                    // Check if player is dead
                     if (this.player.hp <= 0) {
                         this.gameOver();
                     }
-                } else {
-                    // Check if position is available
-                    let canMove = true;
+                    continue;
+                }
+                
+                // Try to find path to player
+                const astar = new ROT.Path.AStar(
+                    this.player.x, this.player.y,
+                    (x, y) => {
+                        // Check if position is walkable
+                        const k = `${x},${y}`;
+                        if (!(k in this.map) || this.map[k] === '#') return false;
+                        
+                        // Check for other entities
+                        for (const other of this.entities) {
+                            if (other !== entity && other !== this.player && 
+                                other.x === x && other.y === y) {
+                                return false;
+                            }
+                        }
+                        
+                        return true;
+                    },
+                    { topology: 4 }
+                );
+                
+                const path = [];
+                astar.compute(entity.x, entity.y, (x, y) => {
+                    path.push([x, y]);
+                });
+                
+                // Move one step along path if available
+                if (path.length > 1) {
+                    const [newX, newY] = path[1];
                     
-                    // Check for other entities
+                    // Make sure we're not moving onto the player or another monster
+                    let canMove = true;
                     for (const other of this.entities) {
                         if (other !== entity && other.x === newX && other.y === newY) {
                             canMove = false;
@@ -746,14 +830,19 @@ class Game {
                         }
                     }
                     
-                    // Move if position is available
                     if (canMove) {
+                        console.log(`Moving monster from (${entity.x},${entity.y}) to (${newX},${newY})`);
                         entity.x = newX;
                         entity.y = newY;
+                    } else {
+                        console.log(`Monster can't move to occupied position (${newX},${newY})`);
                     }
                 }
             }
         }
+        
+        // Redraw the game after all monsters have moved
+        this.drawGame();
     }
     
     checkLevelUp() {
@@ -872,11 +961,25 @@ class Game {
         const gameOverY = Math.floor(this.display.getOptions().height / 2);
         this.display.drawText(0, gameOverY, `%c{${CONFIG.colors.ui.warning}}%b{#000}${"GAME OVER".padStart(40)}`);
         
+        // Remove any existing input handlers to prevent duplicates
+        document.removeEventListener('keydown', this.handleKeyDown);
+        
         // Reset after delay
         setTimeout(() => {
             this.gameState = 'title';
             this.showTitleScreen();
-        }, 3000);
+            
+            // Re-add the title input handler that was removed when starting the game
+            this.titleInputHandler = (e) => {
+                if (this.gameState === 'title') {
+                    console.log('Key pressed on title screen:', e.key);
+                    this.startGame();
+                    // Remove this listener once game starts
+                    window.removeEventListener('keydown', this.titleInputHandler);
+                }
+            };
+            window.addEventListener('keydown', this.titleInputHandler);
+        }, 2000);
     }
 
     generateMonsters(rooms) {
@@ -885,20 +988,13 @@ class Game {
         // Skip the first room (player starts there)
         for (let i = 1; i < rooms.length; i++) {
             const room = rooms[i];
-            const roomCenter = room.getCenter();
+            const center = room.getCenter();
             
             // 50% chance to place a monster in a room
             if (Math.random() > 0.5) {
-                const monster = new Monster(
-                    roomCenter.x, 
-                    roomCenter.y, 
-                    'rat', 
-                    'Giant Rat', 
-                    'r', 
-                    '#a55', 
-                    5, 
-                    2
-                );
+                // Spawn a goblin using MONSTERS.goblin data
+                const goblinData = MONSTERS.goblin;
+                const monster = new Monster(center.x, center.y, goblinData);
                 this.entities.add(monster);
                 this.scheduler.add(monster, true);
             }
@@ -936,6 +1032,33 @@ class Game {
         if (messageOverlay) {
             messageOverlay.style.display = 'none';
         }
+    }
+
+    // Add a helper method to reset move flags at the start of a monster turn
+    resetMonsterMoves() {
+        for (const entity of this.entities) {
+            if (entity !== this.player) {
+                entity.hasMoved = false;
+            }
+        }
+    }
+
+    // Modify the monster turn processing to respect hasMoved
+    processMonsterTurn() {
+        console.log("Processing monster turns...");
+        this.resetMonsterMoves();
+        
+        for (const entity of this.entities) {
+            if (entity === this.player) continue;
+            if (entity.hasMoved) continue;
+            // Each monster acts once per turn (e.g. via its act() method)
+            entity.act();
+            entity.hasMoved = true;
+        }
+        
+        // Redraw game state after all monsters have moved
+        this.player.computeFOV();
+        this.drawGame();
     }
 }
 

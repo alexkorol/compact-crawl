@@ -11,53 +11,154 @@ This document outlines the architecture and design for a browser-based roguelike
 - [x] rot.js integration
 - [x] Game map generation with proper boundaries
 - [x] Player movement mechanics
+- [x] Monster movement and AI
+- [x] Basic combat system
+- [x] Death and game restart
 - [ ] Proper dungeon generation with rooms (in progress)
-- [ ] Basic combat system (in progress)
-- [ ] Monster AI (in progress)
 - [ ] Items and inventory
 - [ ] Game progression
 
+## Implementation & Debugging Logs
+
+### Entity Collision Detection (July 2023)
+
+**Issue**: Players could walk over monsters, and monsters could occupy the same position.
+
+**Solution**: Implemented proper entity collision detection:
+1. Added boundary checks in both player and monster movement logic
+2. Created separate `isValidMove` method for monsters that checks for occupied tiles
+3. Added a direct check for entities at target position in player movement code
+
+**Key debugging insight**: Used console logs for movement attempts to identify collision detection failures:
+```javascript
+console.log(`Moving monster from (${entity.x},${entity.y}) to (${newX},${newY})`);
+console.log(`Monster can't move to occupied position (${newX},${newY})`);
+```
+
+### Monster AI (July 2023)
+
+**Issue**: Monsters didn't move toward the player or attack.
+
+**Solution**:
+1. Implemented A* pathfinding using rot.js
+2. Created visibility check for monsters (only visible monsters move)
+3. Implemented monster-to-player distance checks for attacks
+4. Added proper turn sequencing (player moves, then monsters move)
+
+**Debugging technique**: Added extensive logging to track monster decisions:
+```
+Processing monster at 16,15, visible: true
+Monster has meleeMovement method, calling it
+goblin performing melee movement
+Monster path next position: 15,15
+goblin moving to 15,15
+```
+
+### Combat System (July 2023)
+
+**Issue**: Combat needed to account for stats and provide feedback.
+
+**Solution**:
+1. Added damage calculations using attack and defense stats
+2. Implemented HP tracking for both player and monsters
+3. Created message feedback system for combat
+4. Added death detection and game over state
+
+**Implementation detail**:
+```javascript
+attackEntity(entity) {
+    const damage = Math.max(1, this.player.attack - (entity.defense || 0));
+    entity.hp -= damage;
+    
+    this.addMessage(`You hit the ${entity.name} for ${damage} damage.`);
+    
+    if (entity.hp <= 0) {
+        // Monster death logic, XP gain, etc.
+    } else {
+        // Monster counter-attack
+        const entityDamage = Math.max(1, entity.attack - this.player.defense);
+        this.player.hp -= entityDamage;
+    }
+}
+```
+
+### Game Over & Restart (July 2023)
+
+**Issue**: Game couldn't be restarted after player death.
+
+**Solution**:
+1. Properly cleaned up event handlers to prevent duplicates
+2. Added a global reset function to restore default game state
+3. Implemented multiple restart paths (timeout, keypress, title screen)
+4. Fixed the title screen handler to properly reinitialize the game
+
+**Debug logging**: Tracked the game state transitions during restart:
+```
+Game state changed from 'gameover' to 'title'
+Removed keydown handlers to prevent duplicates
+Re-added title screen input handler
+```
+
+### Global Game Reference Issue (July 2023)
+
+**Issue**: Monster class couldn't reliably access game state.
+
+**Solution**:
+1. Used `window.game` instead of local `game` variable in Monster methods
+2. Added null checks to prevent errors when accessing game data
+3. Ensured game instance is properly initialized before monsters reference it
+
+**Code fix**:
+```javascript
+getPathToPlayer() {
+    const game = window.game;
+    if (!game || !game.player) {
+        console.error("Game or player not found");
+        return [];
+    }
+    // Path calculation code...
+}
+```
+
 ## Recent Fixes & Improvements
 
-### Map Boundary Fixes
-- Fixed issue with missing right and bottom walls where player could move into undefined areas
-- Properly calculated map bounds based on UI space constraints
-- Set explicit right wall boundary at x=75 (instead of using display width)
-- Added debugging logs for wall generation to verify boundaries
-- Added robust movement validation to prevent out-of-bounds movement
+### Monster Movement Fixes
+- Fixed monsters walking on top of each other
+- Ensured monsters only move when visible to player
+- Added adjacency checks for monster attacks
+- Implemented A* pathfinding with topology=4 (no diagonal movement)
+- Added proper collision detection between all entities
 
-### UI Improvements
-- Fixed title screen input handling to properly transition to game
-- Improved message display in the game area
-- Created clear separation between game area and UI elements
-- Made sure UI elements don't cover gameplay area
-- Added consistent visual styling for walls, floors, and entities
+### Combat System Improvements
+- Added stat-based damage calculation
+- Implemented proper attack sequence (player attacks, monster counterattacks)
+- Created detailed combat messages for player feedback
+- Added death detection and game over state
 
-### Core Game Loop Fixes
-- Fixed player movement and turn handling
-- Implemented proper FOV calculation
-- Ensured proper display of visible vs. explored tiles
-- Added better logging for debugging
+### Game Flow Refinements
+- Fixed turn sequencing so player and monsters alternate correctly
+- Added proper death and restart functionality
+- Improved debugging output for entity positions and actions
+- Added monster visibility filtering to optimize performance
 
 ### Key Technical Insights
-1. **Proper Boundary Calculation**: The game needed explicit calculation of playable area boundaries that:
-   - Accounted for top UI space (2 rows)
-   - Accounted for bottom message area (3 rows + 1 divider)
-   - Restricted right boundary to x=75 to ensure visibility
-   - Used inclusive bounds (minX/maxX, minY/maxY) for clarity
+1. **Entity Collision Resolution**: Implemented a multi-layer collision detection system:
+   - Map boundary checks (prevent movement outside valid area)
+   - Tile type checks (prevent walking into walls)
+   - Entity occupation checks (prevent multiple entities on same tile)
+   - Special case for player-monster collisions to trigger combat
 
-2. **Multiple Validation Layers**: Player movement needed multiple checks:
-   - Bounds check (x/y within valid map area)
-   - Map content check (tile exists in the map)
-   - Tile type check (only allow movement to floor tiles)
+2. **Monster AI Optimization**: Monsters now use a staged decision process:
+   - First check if monster is in player's field of view
+   - Then check if monster is adjacent to player for attack
+   - If not adjacent, calculate path to player using A*
+   - Only visible monsters process movement to save computation
 
-3. **Consistent Drawing Order**:
-   - Draw UI background first
-   - Draw map tiles
-   - Draw items on top of map
-   - Draw entities on top of items
-   - Draw player last (always visible)
-   - Draw UI elements and text
+3. **Game State Management**: Implemented clean state transitions between:
+   - Title screen
+   - Active gameplay
+   - Game over
+   - Restart sequence
 
 ## Core Design Philosophy
 
@@ -264,6 +365,65 @@ flowchart TB
     class DungeonGeneration,Generator,BranchManager,InfiniteGen dungeon
 ```
 
+### Enhanced Combat Sequence Diagram
+
+```mermaid
+sequenceDiagram
+    participant Player
+    participant Game as Game Engine
+    participant Monster
+    participant UI as User Interface
+    
+    Player->>Game: Press movement key
+    Game->>Game: Check target position
+    
+    alt Target position contains monster
+        Game->>Monster: Apply player damage
+        Game->>UI: Show attack message
+        
+        alt Monster survives
+            Monster->>Game: Calculate counterattack
+            Game->>Player: Apply monster damage
+            Game->>UI: Show counterattack message
+            
+            alt Player dies
+                Game->>UI: Show death message
+                Game->>Game: Trigger game over
+            end
+        else Monster dies
+            Game->>Game: Remove monster
+            Game->>Player: Grant XP
+            Game->>UI: Show kill message
+            
+            alt Player levels up
+                Game->>Player: Increase stats
+                Game->>UI: Show level up message
+            end
+        end
+    else Target position is empty
+        Game->>Game: Move player
+        Game->>Game: Process monster turns
+        loop For each visible monster
+            Game->>Monster: Calculate move
+            Monster->>Game: Return next position
+            alt Monster adjacent to player
+                Monster->>Game: Attack player
+                Game->>Player: Apply damage
+                Game->>UI: Show attack message
+                
+                alt Player dies
+                    Game->>UI: Show death message
+                    Game->>Game: Trigger game over
+                end
+            else Monster can move
+                Game->>Game: Update monster position
+            end
+        end
+    end
+    
+    Game->>UI: Update display
+```
+
 ### Infinite Dungeon Generation
 
 ```mermaid
@@ -349,6 +509,54 @@ The dungeon consists of several key areas:
 - **Consumables**: One-time use items for various effects
 - **Scrolls and Potions**: Magical items with powerful effects
 
+## Technical Implementation
+
+### Rendering Approach
+
+The game uses HTML5 Canvas for rendering, with a tile-based approach:
+
+- Each game element is represented by a sprite
+- The visible area is centered on the player
+- Only visible tiles are rendered
+- Field of view calculations determine what the player can see
+
+### Infinite Dungeon Implementation
+
+To manage potentially infinite exploration areas while respecting browser memory limitations:
+
+1. **Chunking**: The world is divided into grid chunks
+2. **Deterministic Generation**: Each chunk is generated from a seed based on its coordinates
+3. **Memory Management**:
+   - Only chunks near the player are kept in memory
+   - Distant chunks are serialized and stored
+   - When a player returns to a previously visited area, the chunk is regenerated with the same seed
+   - Important changes (like killed monsters or collected items) are tracked separately
+
+### Save System
+
+- **Local Storage**: Game state is saved to browser's localStorage
+- **Auto-save**: Game state is saved after significant actions
+- **Permadeath**: When character dies, save is deleted
+
+## User Interface
+
+- **Game View**: Main play area showing the dungeon
+- **Stats Panel**: Shows player health, stats, and status effects
+- **Message Log**: Recent game events and messages
+- **Mini-map**: (Optional) Small map showing explored areas
+- **Context Menu**: Appears when interacting with objects
+
+## Development Priorities
+
+1. Core engine and game loop
+2. Basic dungeon generation
+3. Player movement and combat
+4. Monster AI
+5. Items and inventory
+6. Standard branch generation
+7. Infinite branch mechanics
+8. UI polish and effects
+
 ## To-Do List & Features Roadmap
 
 ### Critical Fixes
@@ -356,14 +564,17 @@ The dungeon consists of several key areas:
 - [x] Fix player movement and input handling
 - [x] Fix FOV calculation and exploration mechanics
 - [x] Fix map boundaries to prevent off-screen movement
+- [x] Implement monster collision detection
+- [x] Fix game restart functionality
 
 ### Core Gameplay (Phase 1)
 - [x] Working dungeon exploration with basic rectangular room
 - [x] Turn-based movement
+- [x] Combat mechanics
+- [x] Basic monster AI
+- [x] Death and game over state
 - [ ] Implement proper dungeon generation with multiple rooms
-- [ ] Combat mechanics
-- [ ] Basic monster AI
-- [ ] Death and game over state
+- [ ] Add doors and corridors
 
 ### Extended Features (Phase 2)
 - [ ] Multiple dungeon branches
@@ -380,68 +591,143 @@ The dungeon consists of several key areas:
 - [ ] Help screens and tutorials
 - [ ] Save/load system
 
-## Technical Implementation
+## Technical Implementation Notes
 
-### Rendering Approach
+### Monster Pathfinding Implementation
 
-The game uses HTML5 Canvas for rendering, with a tile-based approach:
+```javascript
+// A* pathfinding setup
+const astar = new ROT.Path.AStar(
+    playerX, playerY,
+    (x, y) => {
+        // Position is valid if:
+        // 1. In map boundaries
+        // 2. Not a wall
+        // 3. Not occupied by another entity (except player)
+        const key = `${x},${y}`;
+        if (!(key in game.map) || game.map[key] === '#') return false;
+        
+        for (const entity of game.entities) {
+            if (entity !== monster && entity !== game.player && entity.x === x && entity.y === y) {
+                return false;
+            }
+        }
+        
+        return true;
+    },
+    { topology: 4 } // Only cardinal directions, no diagonals
+);
 
-- Each game element is represented by an ASCII character
-- Fixed-width display grid (80x30)
-- Top 2 rows reserved for stats and UI
-- Bottom 4 rows reserved for messages and divider
-- Field of view calculations determine what the player can see
-- Right boundary limited to column 75 for optimal display
+// Compute path
+const path = [];
+astar.compute(monster.x, monster.y, (x, y) => {
+    path.push([x, y]);
+});
 
-### Map Generation
+// First position is current position, second is next move
+if (path.length > 1) {
+    const [nextX, nextY] = path[1];
+    // Move logic here...
+}
+```
 
-The current implementation uses a simple rectangular room with walls as a placeholder. The next step will implement:
+### Combat Calculation Logic
 
-1. **Room-based Generation**: Using rot.js's Digger algorithm to create multiple connected rooms
-2. **Proper Door Placement**: Connecting rooms with corridors and doors
-3. **Monster Placement**: Strategic monster placement in rooms (avoiding the starting room)
-4. **Item Placement**: Distributing items throughout the dungeon
+```javascript
+// Player attacks monster
+function attackMonster(player, monster) {
+    // Calculate base damage using player attack and monster defense
+    const baseDamage = player.attack - monster.defense;
+    // Ensure at least 1 damage
+    const damage = Math.max(1, baseDamage);
+    
+    // Apply damage
+    monster.hp -= damage;
+    
+    // Return combat result for message display
+    return {
+        damage,
+        killed: monster.hp <= 0
+    };
+}
 
-## Comparison to DCSS
+// Monster attacks player
+function monsterAttack(monster, player) {
+    // Calculate base damage using monster attack and player defense
+    const baseDamage = monster.attack - player.defense;
+    // Ensure at least 1 damage
+    const damage = Math.max(1, baseDamage);
+    
+    // Apply damage
+    player.hp -= damage;
+    
+    // Return combat result for message display
+    return {
+        damage,
+        killed: player.hp <= 0
+    };
+}
+```
 
-Compact Crawl aims to maintain the spirit of DCSS while dramatically reducing scope:
+### Entity Collision Detection Process
 
-| Feature | DCSS | Compact Crawl |
-|---------|------|---------------|
-| Races | 27+ | None (human only) |
-| Classes | 26+ | None (fighter only) |
-| Dungeon Branches | 18+ | 3-5 |
-| Items | Hundreds | Dozens |
-| Gods | 24+ | None |
-| Magic System | Complex, 8 schools | None |
-| File Count | Thousands | 10 |
+1. **Boundary Check**: Ensure coordinates are within map boundaries
+   ```javascript
+   if (x < bounds.minX || x > bounds.maxX || y < bounds.minY || y > bounds.maxY) return false;
+   ```
+
+2. **Wall Check**: Ensure position is not a wall
+   ```javascript
+   const key = `${x},${y}`;
+   if (map[key] === '#') return false;
+   ```
+
+3. **Entity Collision Check**: Ensure no entities occupy the position
+   ```javascript
+   for (const entity of entities) {
+       if (entity !== self && entity.x === x && entity.y === y) return false;
+   }
+   ```
+
+4. **Special Case**: Allow player and monster to occupy same tile for combat
+   ```javascript
+   if (entity === player) return true; // Allow moving onto player for attacks
+   ```
 
 ## Development Process
 
 ### Current Development Phase
-**Early Development - Core Gameplay**
+**Core Gameplay - Combat and Monster AI**
 
-Our current milestone is getting the basic dungeon exploration working:
+We've successfully implemented:
 1. Title screen (✓ Completed)
 2. Basic map with proper boundaries (✓ Completed)
 3. Player movement and FOV (✓ Completed)
 4. Turn-based game loop (✓ Completed)
-5. Basic monster placement and AI (In Progress)
-6. Basic combat mechanics (In Progress)
+5. Monster movement and basic AI (✓ Completed)
+6. Combat mechanics (✓ Completed)
+7. Death and restart system (✓ Completed)
+
+Next priorities:
+1. Proper dungeon generation with multiple rooms
+2. Doors and corridors
+3. More monster types and behaviors
+4. Basic item system
 
 ### Testing and Debugging
 
-Current focus areas:
-1. Implement proper dungeon generation with multiple rooms
-2. Add monster AI for combat and movement
-3. Implement basic item system
+Current debugging focus areas:
+1. Ensure monster movement is smooth and predictable
+2. Balance combat difficulty
+3. Fix any remaining restart/state transition bugs
 
 ## Future Considerations
 
-- Performance optimization for larger dungeons
-- Mobile/touch support
-- Highscore system
-- Daily challenges
+- Enhance monster AI with behavior patterns
+- Add ranged combat options
+- Implement special abilities for monsters
+- Create unique monster types with different movement patterns
+- Add environmental hazards and traps
 
 ---
 

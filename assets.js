@@ -88,7 +88,8 @@ const MONSTERS = {
         exp: 5,
         level: 2,
         speed: 100,
-        abilities: []
+        abilities: [],
+        behavior: "melee" // Ensures goblin uses meleeMovement
     },
     orc: {
         name: "Orc Warrior",

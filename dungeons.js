@@ -252,6 +252,18 @@ class DungeonGenerator {
             }
         }
         
+        // Skip room 0 (player start), then for each room add goblins with 50% chance
+        for (let i = 1; i < rooms.length; i++) {
+            const room = rooms[i];
+            const center = room.getCenter();
+            if (Math.random() > 0.5) {
+                // Spawn a goblin using MONSTERS.goblin data
+                const goblinData = MONSTERS.goblin;
+                const monster = new Monster(center.x, center.y, goblinData);
+                monsters.push(monster);
+            }
+        }
+        
         return monsters;
     }
     

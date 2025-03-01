@@ -79,46 +79,20 @@ class Player extends Entity {
 class Monster extends Entity {
     constructor(x, y, data) {
         super(x, y, data.symbol, data.color);
-        this.name = data.name;
-        this.hp = data.hp;
-        this.maxHp = data.maxHp;
-        this.attack = data.attack;
-        this.defense = data.defense;
-        this.exp = data.exp;
+        this.name = data.name || "Unknown Monster";
+        this.hp = data.hp || 5;
+        this.maxHp = data.maxHp || 5;
+        this.attack = data.attack || 1;
+        this.defense = data.defense || 0;
+        this.exp = data.exp || 1;
         this.behavior = data.behavior || "melee";
-        this.abilities = data.abilities || [];
-        this.speed = data.speed || 100;
-        this.segments = [];
-        this.tentacleColors = data.tentacleColor || ["#f00"]; // Default red
-        
-        // Initialize segments for snake-like monsters
-        if (this.behavior === "serpentine" || this.behavior === "tentacle" || this.behavior === "multi_tentacle") {
-            this.initializeSegments(data.segments || 3, data.heads || 1);
-        }
+        console.log(`Created monster: ${this.name} at (${this.x},${this.y})`);
     }
 
     act() {
-        // Only act if visible to player
-        if (game.isVisible(this.x, this.y)) {
-            switch (this.behavior) {
-                case "melee":
-                    this.meleeMovement();
-                    break;
-                case "random":
-                    this.randomMovement();
-                    break;
-                case "serpentine":
-                    this.serpentineMovement();
-                    break;
-                case "tentacle":
-                    this.tentacleMovement();
-                    break;
-                case "multi_tentacle":
-                    this.multiTentacleMovement();
-                    break;
-                default:
-                    this.meleeMovement();
-            }
+        console.log(`Monster ${this.name} acting at ${this.x},${this.y}`);
+        if (this.behavior === "melee") {
+            this.meleeMovement();
         }
     }
 
@@ -216,18 +190,47 @@ class Monster extends Entity {
     }
 
     meleeMovement() {
-        // Simple straight-line movement toward player
+        console.log(`${this.name} performing melee movement`);
+        // Get path to player
         const path = this.getPathToPlayer();
+        
         if (path && path.length > 1) {
-            const [nextX, nextY] = path[1];
+            const [nextX, nextY] = path[1]; // Move one tile only
+            console.log(`Monster path next position: ${nextX},${nextY}`);
             
-            // Attack player if adjacent
-            if (nextX === game.player.x && nextY === game.player.y) {
+            // If next position is the player, attack
+            if (nextX === window.game.player.x && nextY === window.game.player.y) {
+                console.log(`${this.name} is attacking player`);
                 this.attackPlayer();
-            } else if (this.isValidMove(nextX, nextY)) {
-                this.x = nextX;
-                this.y = nextY;
+            } 
+            // Otherwise, check if we can move there
+            else {
+                let canMove = true;
+                
+                // Check if tile is walkable
+                const key = `${nextX},${nextY}`;
+                if (!(key in window.game.map) || window.game.map[key] === '#') {
+                    canMove = false;
+                }
+                
+                // Check if position is occupied by another entity
+                for (const entity of window.game.entities) {
+                    if (entity !== this && entity.x === nextX && entity.y === nextY) {
+                        canMove = false;
+                        break;
+                    }
+                }
+                
+                if (canMove) {
+                    console.log(`${this.name} moving to ${nextX},${nextY}`);
+                    this.x = nextX;
+                    this.y = nextY;
+                } else {
+                    console.log(`${this.name} can't move to ${nextX},${nextY}, position invalid or occupied`);
+                }
             }
+        } else {
+            console.log(`No path found for monster ${this.name}`);
         }
     }
 
@@ -483,37 +486,17 @@ class Monster extends Entity {
     }
 
     attackPlayer() {
+        // Use window.game to ensure we're accessing the global game object
+        const game = window.game;
+        
         // Calculate damage
         const damage = Math.max(1, this.attack - game.player.defense);
         
         // Apply damage
         game.player.hp -= damage;
         
-        // Add message based on monster type
-        if (this.behavior === "tentacle" || this.behavior === "multi_tentacle") {
-            let attackVerb = "whips";
-            if (this.name.includes("Kraken")) attackVerb = "constricts";
-            if (this.name.includes("Shoggoth")) attackVerb = "engulfs";
-            if (this.name.includes("Hydra")) attackVerb = "strikes";
-            
-            game.addMessage(`The ${this.name} ${attackVerb} you for ${damage} damage!`, CONFIG.colors.ui.warning);
-        } else if (this.behavior === "serpentine") {
-            game.addMessage(`The ${this.name} bites you for ${damage} damage!`, CONFIG.colors.ui.warning);
-        } else {
-            game.addMessage(`The ${this.name} attacks you for ${damage} damage!`, CONFIG.colors.ui.warning);
-        }
-        
-        // Check for special abilities
-        if (this.abilities.includes("poison") && ROT.RNG.getUniform() < 0.3) {
-            game.player.hp--; // Additional poison damage
-            game.addMessage("You are poisoned!", CONFIG.colors.ui.warning);
-        }
-        
-        if (this.abilities.includes("dissolve") && ROT.RNG.getUniform() < 0.2) {
-            // Shoggoth special ability
-            game.player.defense = Math.max(0, game.player.defense - 1);
-            game.addMessage("Your armor is dissolving!", CONFIG.colors.ui.warning);
-        }
+        // Add message
+        game.addMessage(`The ${this.name} attacks you for ${damage} damage!`, CONFIG.colors.ui.warning);
         
         // Check if player is dead
         if (game.player.hp <= 0) {
@@ -522,10 +505,33 @@ class Monster extends Entity {
     }
 
     getPathToPlayer() {
+        // Use window.game to ensure we're accessing the global game object
+        const game = window.game;
+        if (!game || !game.player) {
+            console.error("Game or player not found");
+            return [];
+        }
+        
         // Create a pathfinding instance
         const astar = new ROT.Path.AStar(
-            game.player.x, game.player.y,
-            (x, y) => this.isValidMove(x, y)
+            game.player.x, 
+            game.player.y,
+            (x, y) => {
+                // Is this position walkable?
+                const key = `${x},${y}`;
+                if (!(key in game.map) || game.map[key] === '#') return false;
+                
+                // Don't allow moving onto other monsters (except player)
+                for (const entity of game.entities) {
+                    if (entity !== this && entity !== game.player && entity.x === x && entity.y === y) {
+                        return false;
+                    }
+                }
+                
+                // Position is walkable
+                return true;
+            },
+            { topology: 4 } // Only cardinal directions
         );
         
         // Compute path
@@ -538,15 +544,31 @@ class Monster extends Entity {
     }
 
     isValidMove(x, y) {
-        // Use key lookup on game.map (which is an object)
+        // Use window.game to ensure we're accessing the global game object
+        const game = window.game;
+        
+        // Check bounds first
+        if (x < game.mapBounds.minX || 
+            x > game.mapBounds.maxX || 
+            y < game.mapBounds.minY || 
+            y > game.mapBounds.maxY) {
+            return false;
+        }
+        
+        // Check map tiles
         const key = `${x},${y}`;
-        // If tile is undefined or a wall, move is invalid.
         if (!(key in game.map)) return false;
         if (game.map[key] === '#') return false;
-        // Allow moving into player tile for special behaviors
-        if (x === game.player.x && y === game.player.y) {
-            return this.behavior === "tentacle" || this.behavior === "multi_tentacle";
+        
+        // Check for entities at target position (can't move onto another entity)
+        for (const entity of game.entities) {
+            if (entity !== this && entity.x === x && entity.y === y) {
+                // Allow moving onto player for attack
+                if (entity === game.player) return true;
+                return false;
+            }
         }
+        
         return true;
     }
 
