@@ -4,8 +4,9 @@
 
 This document outlines the architecture and design for a browser-based roguelike game inspired by Dungeon Crawl Stone Soup (DCSS), but with a smaller scope to fit within a 10-file constraint. The game leverages HTML5 Canvas and JavaScript to create a turn-based dungeon crawler with procedural generation and infinite exploration capabilities.
 
-## Current Implementation Status
+## Current Implementation Status & Roadmap
 
+### Completed Features
 - [x] Title screen with ASCII art logo
 - [x] Basic project structure and files
 - [x] rot.js integration
@@ -14,9 +15,25 @@ This document outlines the architecture and design for a browser-based roguelike
 - [x] Monster movement and AI
 - [x] Basic combat system
 - [x] Death and game restart
-- [ ] Proper dungeon generation with rooms (in progress)
-- [ ] Items and inventory
-- [ ] Game progression
+
+### In Progress (Core Gameplay - Phase 1)
+- [ ] Proper dungeon generation with multiple rooms
+- [ ] Doors and corridors
+- [ ] More monster types and behaviors
+
+### Planned Features (Phase 2)
+- [ ] Multiple dungeon branches
+- [ ] Inventory system
+- [ ] Items and equipment
+- [ ] Character progression
+- [ ] Advanced monster AI
+
+### Polish & UI (Phase 3)
+- [ ] Message logging improvements
+- [ ] Sound effects
+- [ ] UI polish
+- [ ] Help screens and tutorials
+- [ ] Save/load system
 
 ## Implementation & Debugging Logs
 
@@ -120,26 +137,7 @@ getPathToPlayer() {
 }
 ```
 
-## Recent Fixes & Improvements
-
-### Monster Movement Fixes
-- Fixed monsters walking on top of each other
-- Ensured monsters only move when visible to player
-- Added adjacency checks for monster attacks
-- Implemented A* pathfinding with topology=4 (no diagonal movement)
-- Added proper collision detection between all entities
-
-### Combat System Improvements
-- Added stat-based damage calculation
-- Implemented proper attack sequence (player attacks, monster counterattacks)
-- Created detailed combat messages for player feedback
-- Added death detection and game over state
-
-### Game Flow Refinements
-- Fixed turn sequencing so player and monsters alternate correctly
-- Added proper death and restart functionality
-- Improved debugging output for entity positions and actions
-- Added monster visibility filtering to optimize performance
+## Recent Technical Improvements
 
 ### Key Technical Insights
 1. **Entity Collision Resolution**: Implemented a multi-layer collision detection system:
@@ -159,6 +157,12 @@ getPathToPlayer() {
    - Active gameplay
    - Game over
    - Restart sequence
+
+### Testing and Debugging Focus
+Current debugging focus areas:
+1. Ensure monster movement is smooth and predictable
+2. Balance combat difficulty
+3. Fix any remaining restart/state transition bugs
 
 ## Core Design Philosophy
 
@@ -181,10 +185,10 @@ The game is structured across several interconnected systems:
 4. `dungeons.js` - Dungeon generation systems
 5. `ui.js` - User interface rendering and input handling
 6. `assets.js` - Asset management for graphics and sounds
-7. `DESIGN.md` - This design document
-8. `README.md` - Installation and getting started guide
-9. `utils.js` - Utility functions and algorithms
-10. `data.js` - Game data and configuration
+7. `utils.js` - Utility functions and algorithms
+8. `data.js` - Game data and configuration
+9. `DESIGN.md` - This design document
+10. `README.md` - Installation and getting started guide
 
 ### Architecture Diagram
 
@@ -546,51 +550,6 @@ To manage potentially infinite exploration areas while respecting browser memory
 - **Mini-map**: (Optional) Small map showing explored areas
 - **Context Menu**: Appears when interacting with objects
 
-## Development Priorities
-
-1. Core engine and game loop
-2. Basic dungeon generation
-3. Player movement and combat
-4. Monster AI
-5. Items and inventory
-6. Standard branch generation
-7. Infinite branch mechanics
-8. UI polish and effects
-
-## To-Do List & Features Roadmap
-
-### Critical Fixes
-- [x] Fix dungeon rendering after title screen
-- [x] Fix player movement and input handling
-- [x] Fix FOV calculation and exploration mechanics
-- [x] Fix map boundaries to prevent off-screen movement
-- [x] Implement monster collision detection
-- [x] Fix game restart functionality
-
-### Core Gameplay (Phase 1)
-- [x] Working dungeon exploration with basic rectangular room
-- [x] Turn-based movement
-- [x] Combat mechanics
-- [x] Basic monster AI
-- [x] Death and game over state
-- [ ] Implement proper dungeon generation with multiple rooms
-- [ ] Add doors and corridors
-
-### Extended Features (Phase 2)
-- [ ] Multiple dungeon branches
-- [ ] Inventory system
-- [ ] Items and equipment
-- [ ] Character progression
-- [ ] Monster variety
-- [ ] Special abilities
-
-### Polish & UI (Phase 3)
-- [ ] Message logging improvements
-- [ ] Sound effects
-- [ ] UI polish
-- [ ] Help screens and tutorials
-- [ ] Save/load system
-
 ## Technical Implementation Notes
 
 ### Monster Pathfinding Implementation
@@ -693,41 +652,6 @@ function monsterAttack(monster, player) {
    ```javascript
    if (entity === player) return true; // Allow moving onto player for attacks
    ```
-
-## Development Process
-
-### Current Development Phase
-**Core Gameplay - Combat and Monster AI**
-
-We've successfully implemented:
-1. Title screen (✓ Completed)
-2. Basic map with proper boundaries (✓ Completed)
-3. Player movement and FOV (✓ Completed)
-4. Turn-based game loop (✓ Completed)
-5. Monster movement and basic AI (✓ Completed)
-6. Combat mechanics (✓ Completed)
-7. Death and restart system (✓ Completed)
-
-Next priorities:
-1. Proper dungeon generation with multiple rooms
-2. Doors and corridors
-3. More monster types and behaviors
-4. Basic item system
-
-### Testing and Debugging
-
-Current debugging focus areas:
-1. Ensure monster movement is smooth and predictable
-2. Balance combat difficulty
-3. Fix any remaining restart/state transition bugs
-
-## Future Considerations
-
-- Enhance monster AI with behavior patterns
-- Add ranged combat options
-- Implement special abilities for monsters
-- Create unique monster types with different movement patterns
-- Add environmental hazards and traps
 
 ---
 
