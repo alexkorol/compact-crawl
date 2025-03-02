@@ -76,9 +76,13 @@ class Player extends Entity {
     }
 }
 
+// Fix the Monster class to better handle different monster types
+
 class Monster extends Entity {
     constructor(x, y, data) {
-        super(x, y, data.symbol, data.color);
+        super(x, y, data.symbol || 'M', data.color || '#f00');
+        
+        // Copy monster data properties
         this.name = data.name || "Unknown Monster";
         this.hp = data.hp || 5;
         this.maxHp = data.maxHp || 5;
@@ -86,16 +90,52 @@ class Monster extends Entity {
         this.defense = data.defense || 0;
         this.exp = data.exp || 1;
         this.behavior = data.behavior || "melee";
+        this.segments = [];
+        this.hasMoved = false;
+        
+        // Initialize segments for special monsters
+        if (data.behavior === "serpentine" || 
+            data.behavior === "tentacle" || 
+            data.behavior === "multi_tentacle") {
+            const segmentCount = data.segments || 3;
+            const headCount = data.heads || 1;
+            this.tentacleColors = data.tentacleColor || ["#88f", "#66d", "#44b"];
+            this.initializeSegments(segmentCount, headCount);
+        }
+        
         console.log(`Created monster: ${this.name} at (${this.x},${this.y})`);
     }
-
+    
     act() {
-        console.log(`Monster ${this.name} acting at ${this.x},${this.y}`);
-        if (this.behavior === "melee") {
-            this.meleeMovement();
+        try {
+            console.log(`Monster ${this.name} acting at ${this.x},${this.y}`);
+            
+            // Different behaviors for different monster types
+            switch(this.behavior) {
+                case "melee":
+                    this.meleeMovement();
+                    break;
+                case "serpentine":
+                    this.serpentineMovement();
+                    break;
+                case "tentacle":
+                    this.tentacleMovement();
+                    break;
+                case "multi_tentacle":
+                    this.multiTentacleMovement();
+                    break;
+                case "random":
+                    this.randomMovement();
+                    break;
+                default:
+                    this.meleeMovement();
+                    break;
+            }
+        } catch (err) {
+            console.error(`Error in monster ${this.name} act():`, err);
         }
     }
-
+    
     initializeSegments(length, heads = 1) {
         this.segments = [];
         
@@ -488,6 +528,11 @@ class Monster extends Entity {
     attackPlayer() {
         // Use window.game to ensure we're accessing the global game object
         const game = window.game;
+        
+        if (!game || !game.player) {
+            console.error("Cannot attack player - game or player not found");
+            return;
+        }
         
         // Calculate damage
         const damage = Math.max(1, this.attack - game.player.defense);

@@ -5,6 +5,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Compact Crawl</title>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400&family=Source+Code+Pro&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inconsolata&family=Roboto+Mono&family=Ubuntu+Mono&display=swap" rel="stylesheet">
     <style>
         body {
             margin: 0;
@@ -89,6 +91,133 @@
         #game-ui {
             display: none;
         }
+
+        /* Additional styles for sandbox mode */
+        #sandbox-panel select,
+        #sandbox-panel button {
+            background-color: #333;
+            color: #eee;
+            border: 1px solid #555;
+            padding: 3px 8px;
+            margin: 2px;
+            font-family: monospace;
+            font-size: 0.9em;
+        }
+        
+        #sandbox-panel button:hover {
+            background-color: #444;
+            border-color: #888;
+            cursor: pointer;
+        }
+        
+        #sandbox-panel h3, 
+        #sandbox-panel h4 {
+            margin: 5px 0;
+            border-bottom: 1px solid #555;
+            padding-bottom: 3px;
+        }
+        
+        /* Test font display */
+        .font-sample {
+            margin: 10px 0;
+            padding: 5px;
+            border: 1px solid #444;
+            font-size: 14px;
+            line-height: 1.4;
+        }
+        
+        #sandbox-panel label {
+            display: block;
+            margin: 5px 0;
+        }
+        
+        .sandbox-section {
+            margin-top: 10px;
+            padding: 5px;
+            border: 1px solid #333;
+            border-radius: 3px;
+        }
+
+        /* Additional styles for font comparison */
+        #font-preview {
+            color: #eee;
+            background: rgba(0, 0, 0, 0.85);
+            border: 1px solid #555;
+            padding: 10px;
+            border-radius: 3px;
+            font-size: 14px;
+        }
+        
+        #font-preview h4 {
+            margin: 5px 0;
+            border-bottom: 1px solid #555;
+            padding-bottom: 3px;
+        }
+        
+        #font-preview button {
+            background-color: #333;
+            color: #eee;
+            border: 1px solid #555;
+            padding: 3px 8px;
+            font-family: monospace;
+            display: block;
+            margin: 5px 0;
+            cursor: pointer;
+        }
+        
+        #font-preview button:hover {
+            background-color: #444;
+        }
+        
+        /* Preload fonts to ensure they're available */
+        @font-face {
+            font-family: 'DejaVu Sans Mono';
+            src: local('DejaVu Sans Mono');
+            font-display: block;
+        }
+        
+        @font-face {
+            font-family: 'Monaco';
+            src: local('Monaco');
+            font-display: block;
+        }
+        
+        @font-face {
+            font-family: 'Consolas';
+            src: local('Consolas');
+            font-display: block;
+        }
+        
+        @font-face {
+            font-family: 'Courier New';
+            src: local('Courier New');
+            font-display: block;
+        }
+        
+        @font-face {
+            font-family: 'Lucida Console';
+            src: local('Lucida Console');
+            font-display: block;
+        }
+        
+        /* Additional helper classes */
+        .font-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 10px;
+            margin-top: 10px;
+        }
+        
+        .font-sample {
+            border: 1px solid #444;
+            padding: 8px;
+            border-radius: 3px;
+        }
+        
+        .font-name {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
     </style>
 </head>
 <body>
@@ -118,23 +247,110 @@
         </div>
     </div>
 
+    <!-- Add debug controls to HTML -->
+    <div id="debug-panel" style="display: none; position: fixed; bottom: 10px; right: 10px; background: rgba(0,0,0,0.8); border: 1px solid #555; padding: 10px; z-index: 1000;">
+        <h3>Debug Controls</h3>
+        <button onclick="window.setDebugMode(!window.DEBUG_MODE)">Toggle Debug Mode</button>
+        <button onclick="window.game.player.hp = window.game.player.maxHp">Heal Player</button>
+        <button onclick="window.game.spawnTestMonsters()">Spawn Monsters</button>
+        <button onclick="window.validateGameState(window.game)">Validate Game State</button>
+        <button onclick="window.saveGame(window.game)">Save Game</button>
+        <button onclick="window.loadGame(window.game)">Load Game</button>
+        <div>
+            <label>
+                <input type="checkbox" onchange="document.getElementById('debug-log').style.display = this.checked ? 'block' : 'none'"> Show Debug Log
+            </label>
+        </div>
+    </div>
+    <div id="debug-log" style="display: none; position: fixed; top: 10px; right: 10px; width: 300px; height: 200px; background: rgba(0,0,0,0.8); border: 1px solid #555; padding: 10px; overflow-y: auto; z-index: 1000;"></div>
+
     <!-- Load in correct dependency order -->
     <script src="https://cdn.jsdelivr.net/npm/rot-js@2/dist/rot.js"></script>
-    <script src="assets.js"></script>        <!-- CONFIG and utility functions -->
-    <script src="data.js"></script>         <!-- Game data management -->
-    <script src="monsters.js"></script>     <!-- Monster behaviors -->
-    <script src="entities.js"></script>      <!-- Entity classes -->
-    <script src="dungeons.js"></script>      <!-- Dungeon generation -->
-    <script src="ui.js"></script>           <!-- UI handlers -->
-    <script src="game.js"></script>         <!-- Main game loop -->
+    <script src="utils.js"></script>          <!-- Utils must be loaded first for font functions -->
+    <script src="assets.js"></script>         <!-- CONFIG and constants -->
+    <script src="data.js"></script>           <!-- Game data management -->
+    <script src="monsters.js"></script>       <!-- Monster behaviors -->
+    <script src="entities.js"></script>       <!-- Entity classes -->
+    <script src="dungeons.js"></script>       <!-- Dungeon generation -->
+    <script src="ui.js"></script>             <!-- UI handlers -->
+    <script src="game.js"></script>           <!-- Main game loop -->
 
     <!-- Initialize game immediately after scripts are loaded -->
     <script>
+        // Export utility functions to the global scope for use in the game
         window.addEventListener('load', () => {
+            // Export font detection functions to global scope
+            if (typeof isFontAvailable === 'function') {
+                window.isFontAvailable = isFontAvailable;
+            }
+            if (typeof detectSystemFonts === 'function') {
+                window.detectSystemFonts = detectSystemFonts;
+            }
+            if (typeof getActuallyDifferentFonts === 'function') {
+                window.getActuallyDifferentFonts = getActuallyDifferentFonts;
+            }
+            if (typeof createFontPreview === 'function') {
+                window.createFontPreview = createFontPreview;
+            }
+            if (typeof compareFonts === 'function') {
+                window.compareFonts = compareFonts;
+            }
+            
+            // Initialize game
             window.game = new Game();
+            
             // Clear loading message
             document.getElementById('message-overlay').innerHTML = 'Welcome to Compact Crawl!<br>Use arrow keys or hjkl to move.';
+            
+            // Add extra help text for game modes
+            const helpText = {
+                'main': 'Main Game: Explore the dungeon and survive!',
+                'arena': 'Arena Mode: Fight waves of increasingly tough monsters.',
+                'sandbox': 'Sandbox Mode: Experiment with mechanics using enhanced stats.'
+            };
+            
+            // Listen for game mode changes
+            document.addEventListener('gameModeChanged', (e) => {
+                const mode = e.detail.mode;
+                if (helpText[mode]) {
+                    document.getElementById('message-overlay').innerHTML = helpText[mode];
+                }
+            });
         });
+
+        // Debug keyboard shortcut
+        document.addEventListener('keydown', (e) => {
+            // Ctrl+D to toggle debug panel
+            if (e.ctrlKey && e.key === 'd') {
+                e.preventDefault();
+                const panel = document.getElementById('debug-panel');
+                panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+            }
+        });
+        
+        // Debug logger
+        const originalConsoleLog = console.log;
+        console.log = function(...args) {
+            originalConsoleLog.apply(console, args);
+            
+            // Add to debug log
+            const debugLog = document.getElementById('debug-log');
+            if (debugLog) {
+                const message = document.createElement('div');
+                message.textContent = args.map(arg => 
+                    typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
+                ).join(' ');
+                debugLog.appendChild(message);
+                
+                // Scroll to bottom
+                debugLog.scrollTop = debugLog.scrollHeight;
+                
+                // Limit number of messages
+                if (debugLog.children.length > 100) {
+                    debugLog.removeChild(debugLog.firstChild);
+                }
+            }
+        };
     </script>
 </body>
 </html>
