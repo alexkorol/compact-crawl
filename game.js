@@ -184,84 +184,58 @@ class Game {
             
             console.log("Map bounds:", this.mapBounds);
             
-            // Create the map with proper boundaries
+            // Use the dungeon generator to create the play area
+            if (!this.dungeonGenerator) {
+                this.dungeonGenerator = new DungeonGenerator(this);
+            }
+
+            const mapWidth = this.mapBounds.maxX - this.mapBounds.minX + 1;
+            const mapHeight = this.mapBounds.maxY - this.mapBounds.minY + 1;
+            const dungeon = this.dungeonGenerator.generateStandard(mapWidth, mapHeight, this.level || 1);
+
             this.map = {};
-            
-            // Fill entire playable area
-            for (let y = 0; y < displayHeight; y++) {
-                for (let x = 0; x <= rightWallX; x++) { // Only go up to x=42
-                    // Is this within the game area?
-                    if (y >= this.mapBounds.minY && y <= this.mapBounds.maxY) {
-                        // We're in the game area
-                        
-                        // Add walls at the boundaries
-                        if (x === 0 || x === rightWallX || y === this.mapBounds.minY || y === this.mapBounds.maxY) {
-                            this.map[`${x},${y}`] = '#'; // Wall
-                            if (x === rightWallX) {
-                                console.log(`Right wall at ${x},${y}`);
-                            }
-                        } else {
-                            this.map[`${x},${y}`] = '.'; // Floor
-                        }
+
+            for (let y = 0; y < mapHeight; y++) {
+                for (let x = 0; x < mapWidth; x++) {
+                    const globalX = this.mapBounds.minX + x;
+                    const globalY = this.mapBounds.minY + y;
+                    const localKey = `${x},${y}`;
+
+                    let tile = dungeon.map[localKey];
+                    if (!tile) {
+                        tile = this.WALL_TILE;
                     }
+
+                    tile = tile === this.WALL_TILE ? this.WALL_TILE : this.FLOOR_TILE;
+
+                    if (x === 0 || y === 0 || x === mapWidth - 1 || y === mapHeight - 1) {
+                        tile = this.WALL_TILE;
+                    }
+
+                    this.map[`${globalX},${globalY}`] = tile;
                 }
             }
-            
-            // Verify right wall is at x=42
-            console.log("Right wall coordinates (should all be at x=42):");
-            for (let y = this.mapBounds.minY; y <= this.mapBounds.maxY; y++) {
-                const key = `${rightWallX},${y}`;
-                console.log(`  ${key}: ${this.map[key] || 'undefined'}`);
-            }
-            
-            // Place player in center of gameplay area
-            const centerX = Math.floor(rightWallX / 2);
-            const centerY = Math.floor((this.mapBounds.minY + this.mapBounds.maxY) / 2);
-            
-            this.player = {
-                x: centerX,
-                y: centerY,
-                hp: 10,
-                maxHp: 10,
-                attack: 2,
-                defense: 1,
-                level: 1,
-                exp: 0,
-                gold: 0,
-                visibleTiles: {}
-            };
-            
-            console.log(`Player placed at ${centerX},${centerY}`);
-            
-            // Add visible tiles calculation
-            this.player.computeFOV = () => {
-                this.player.visibleTiles = {};
-                
-                // Simple visibility - everything within radius 8 is visible
-                for (let dx = -8; dx <= 8; dx++) {
-                    for (let dy = -8; dy <= 8; dy++) {
-                        if (dx*dx + dy*dy <= 64) { // Circle with radius 8
-                            const x = this.player.x + dx;
-                            const y = this.player.y + dy;
-                            const key = `${x},${y}`;
-                            
-                            if (key in this.map) {
-                                this.player.visibleTiles[key] = true;
-                                this.explored[key] = true;
-                            }
-                        }
-                    }
-                }
-                return this.player.visibleTiles;
-            };
-            
+
+            this.freeCells = dungeon.freeCells.map(cell => ({
+                x: cell.x + this.mapBounds.minX,
+                y: cell.y + this.mapBounds.minY
+            }));
+
+            const fallbackLocal = dungeon.freeCells.length > 0
+                ? dungeon.freeCells[0]
+                : { x: Math.floor(mapWidth / 2), y: Math.floor(mapHeight / 2) };
+            const startPosition = dungeon.startPosition || fallbackLocal;
+            const startLocalX = Array.isArray(startPosition) ? startPosition[0] : startPosition.x;
+            const startLocalY = Array.isArray(startPosition) ? startPosition[1] : startPosition.y;
+            const startX = startLocalX + this.mapBounds.minX;
+            const startY = startLocalY + this.mapBounds.minY;
+
+            this.player = new Player(startX, startY);
+
             // Initialize game state
             this.entities = new Set([this.player]);
-            this.items = [];
-            this.explored = {};
             this.level = 1;
             this.turns = 0;
-            this.messages = [];
             
             // Set up game based on selected mode
             switch(gameMode) {
@@ -289,33 +263,10 @@ class Game {
             
             // Draw initial state
             this.drawGame();
-            
-            // Setup message log
-            this.addMessage = (text, color = "#fff") => {
-                console.log("Message:", text);
-                this.messages.unshift({text, color});
-                if (this.messages.length > 50) this.messages.pop();
-                
-                // Update UI if any
-                const msgOverlay = document.getElementById('message-overlay');
-                if (msgOverlay) {
-                    const msg = document.createElement('div');
-                    msg.style.color = color;
-                    msg.textContent = text;
-                    msgOverlay.appendChild(msg);
-                    
-                    if (msgOverlay.children.length > 10) {
-                        msgOverlay.removeChild(msgOverlay.firstChild);
-                    }
-                    
-                    msgOverlay.scrollTop = msgOverlay.scrollHeight;
-                }
-            };
-            
+
             // Add welcome message
-            this.addMessage("DEBUG: Simple map created for testing", "#ff0");
             this.addMessage("Welcome to the dungeon!", "#ff0");
-            
+
             return true;
         } catch (err) {
             console.error('Error in startGame:', err);
@@ -1641,8 +1592,13 @@ setupSandboxMode() {
             msgOverlay.scrollTop = msgOverlay.scrollHeight;
         }
         
-        // Redraw game to show the new message
-        this.drawGame();
+        // Redraw game to show the new message once the map is ready
+        const mapReady = this.map && this.mapBounds && Object.keys(this.map).length > 0;
+        const fovReady = this.player && this.player.visibleTiles &&
+            Object.keys(this.player.visibleTiles).length > 0;
+        if (mapReady && fovReady) {
+            this.drawGame();
+        }
     }
 
     toggleFontPreview() {
