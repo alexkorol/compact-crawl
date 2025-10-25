@@ -170,9 +170,9 @@ class TentacleMonster {
     draw() {
         const monster = this.monster;
         const data = MONSTERS[monster.type];
-        
-        // Only draw if the monster is visible
-        if (!game.isVisible(monster.x, monster.y)) return;
+        const game = window.game;
+
+        if (!game || !game.isVisible(monster.x, monster.y)) return;
         
         // Draw segments from tail to head
         for (let i = this.segments.length - 1; i >= 0; i--) {
