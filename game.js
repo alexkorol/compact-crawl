@@ -236,6 +236,14 @@ class Game {
             this.entities = new Set([this.player]);
             this.level = 1;
             this.turns = 0;
+
+            // Reset any existing scheduler/engine
+            if (this.engine) {
+                this.engine.lock();
+            }
+            this.scheduler = new ROT.Scheduler.Simple();
+            this.scheduler.add(this.player, false);
+            this.engine = new ROT.Engine(this.scheduler);
             
             // Set up game based on selected mode
             switch(gameMode) {
@@ -260,12 +268,15 @@ class Game {
             
             // Compute initial FOV
             this.player.computeFOV();
-            
+
             // Draw initial state
             this.drawGame();
 
             // Add welcome message
             this.addMessage("Welcome to the dungeon!", "#ff0");
+
+            // Start the turn engine
+            this.engine.start();
 
             return true;
         } catch (err) {
@@ -281,8 +292,11 @@ class Game {
         this.arenaScore = 0;
         
         // Clear any existing monsters
-        for (const entity of this.entities) {
+        for (const entity of Array.from(this.entities)) {
             if (entity !== this.player) {
+                if (this.scheduler) {
+                    this.scheduler.remove(entity);
+                }
                 this.entities.delete(entity);
             }
         }
@@ -563,13 +577,17 @@ setupSandboxMode() {
     }
 
     clearMonsters() {
-        // Remove all entities except player
-        const entities = new Set();
-        entities.add(this.player);
-        
-        const removedCount = this.entities.size - 1;
-        this.entities = entities;
-        
+        let removedCount = 0;
+        for (const entity of Array.from(this.entities)) {
+            if (entity !== this.player) {
+                if (this.scheduler) {
+                    this.scheduler.remove(entity);
+                }
+                this.entities.delete(entity);
+                removedCount++;
+            }
+        }
+
         this.addMessage(`Removed ${removedCount} monsters`, CONFIG.colors.ui.info);
         this.drawGame();
     }
@@ -682,6 +700,13 @@ setupSandboxMode() {
         this.addMessage(`Grid ${show ? 'enabled' : 'disabled'}`, CONFIG.colors.ui.info);
     }
 
+    addMonster(monster) {
+        this.entities.add(monster);
+        if (this.scheduler) {
+            this.scheduler.add(monster, false);
+        }
+    }
+
     spawnArenaWave() {
         const monsterCount = Math.min(5 + this.arenaWave, 15); // Cap at 15 monsters
         
@@ -734,7 +759,7 @@ setupSandboxMode() {
             });
             
             console.log(`Spawning arena monster: ${monster.name} at ${x},${y}`);
-            this.entities.add(monster);
+            this.addMonster(monster);
         }
     }
 
@@ -765,7 +790,7 @@ setupSandboxMode() {
             try {
                 const monster = new Monster(x, y, monsterData);
                 console.log(`Spawning test monster: ${monsterType} at ${x},${y}`);
-                this.entities.add(monster);
+                this.addMonster(monster);
                 
                 // Adjust position for next monster
                 y += 2;
@@ -793,7 +818,7 @@ setupSandboxMode() {
             );
             
             console.log("Spawning test goblin at", goblin.x, goblin.y);
-            this.entities.add(goblin);
+            this.addMonster(goblin);
             
             // Add another goblin above the player
             const goblin2 = new Monster(
@@ -803,7 +828,7 @@ setupSandboxMode() {
             );
             
             console.log("Spawning second test goblin at", goblin2.x, goblin2.y);
-            this.entities.add(goblin2);
+            this.addMonster(goblin2);
             
             // Log total entities
             console.log("Total entities:", this.entities.size);
@@ -1047,17 +1072,17 @@ setupSandboxMode() {
         // Wait command (space or period)
         if (e.key === '.' || e.key === ' ') {
             this.addMessage("You wait a turn...", CONFIG.colors.ui.info);
-            this.moveMonsters();
+            this.drawGame();
+            this.endPlayerTurn();
             return;
         }
-        
+
         if (e.key in keyMap) {
             const [dx, dy] = keyMap[e.key];
-            
+
             // Try moving or attacking
             if (this.tryPlayerAction(dx, dy)) {
-                // After player action, give monsters their turn
-                this.moveMonsters();
+                this.endPlayerTurn();
             }
         }
     }
@@ -1067,7 +1092,7 @@ setupSandboxMode() {
         const newX = this.player.x + dx;
         const newY = this.player.y + dy;
         const key = `${newX},${newY}`;
-        
+
         // Check if outside map or into a wall
         if (!(key in this.map) || this.map[key] === this.WALL_TILE) {
             console.log(`Cannot move to ${newX},${newY} - wall or out of bounds`);
@@ -1101,92 +1126,18 @@ setupSandboxMode() {
         this.player.computeFOV();
         this.turns++;
         this.drawGame(); // Redraw after movement
-        
+
         return true;
     }
 
-    moveMonsters() {
-        console.log("Processing monster turns...");
-        
-        // Loop through all entities and move monsters that are visible
-        for (const entity of this.entities) {
-            if (entity === this.player) continue;
-            
-            const key = `${entity.x},${entity.y}`;
-            const isVisible = key in this.player.visibleTiles;
-            
-            console.log(`Processing monster at ${entity.x},${entity.y}, visible: ${isVisible}`);
-            
-            if (isVisible) {
-                // Check if monster is adjacent to player
-                const dx = this.player.x - entity.x;
-                const dy = this.player.y - entity.y;
-                const isAdjacent = Math.abs(dx) <= 1 && Math.abs(dy) <= 1;
-                
-                if (isAdjacent) {
-                    // Attack player
-                    const damage = Math.max(1, entity.attack - this.player.defense);
-                    this.player.hp -= damage;
-                    this.addMessage(`The ${entity.name || "monster"} attacks you for ${damage} damage.`, CONFIG.colors.ui.warning);
-                    
-                    if (this.player.hp <= 0) {
-                        this.gameOver();
-                    }
-                    continue;
-                }
-                
-                // Try to find path to player
-                const astar = new ROT.Path.AStar(
-                    this.player.x, this.player.y,
-                    (x, y) => {
-                        // Check if position is walkable
-                        const k = `${x},${y}`;
-                        if (!(k in this.map) || this.map[k] === '#') return false;
-                        
-                        // Check for other entities
-                        for (const other of this.entities) {
-                            if (other !== entity && other !== this.player && 
-                                other.x === x && other.y === y) {
-                                return false;
-                            }
-                        }
-                        
-                        return true;
-                    },
-                    { topology: 4 }
-                );
-                
-                const path = [];
-                astar.compute(entity.x, entity.y, (x, y) => {
-                    path.push([x, y]);
-                });
-                
-                // Move one step along path if available
-                if (path.length > 1) {
-                    const [newX, newY] = path[1];
-                    
-                    // Make sure we're not moving onto the player or another monster
-                    let canMove = true;
-                    for (const other of this.entities) {
-                        if (other !== entity && other.x === newX && other.y === newY) {
-                            canMove = false;
-                            break;
-                        }
-                    }
-                    
-                    if (canMove) {
-                        console.log(`Moving monster from (${entity.x},${entity.y}) to (${newX},${newY})`);
-                        entity.x = newX;
-                        entity.y = newY;
-                    } else {
-                        console.log(`Monster can't move to occupied position (${newX},${newY})`);
-                    }
-                }
-            }
+    endPlayerTurn() {
+        if (this.scheduler && this.player && this.gameState === 'playing') {
+            this.scheduler.add(this.player, false);
         }
-        
-        // Redraw the game after all monsters have moved
-        this.drawGame();
+
+        if (this.engine) {
+            this.engine.unlock();
+        }
     }
 
     attackEntity(entity) {
@@ -1204,10 +1155,13 @@ setupSandboxMode() {
         // Check if entity is dead
         if (entity.hp <= 0) {
             this.addMessage(`You killed the ${entity.name || 'monster'}!`, CONFIG.colors.ui.highlight);
-            
+
             // Remove entity
+            if (this.scheduler) {
+                this.scheduler.remove(entity);
+            }
             this.entities.delete(entity);
-            
+
             // Gain experience and gold
             this.player.exp += entity.exp || 1;
             this.player.gold = (this.player.gold || 0) + Math.floor(Math.random() * (entity.exp || 1)) + 1;
@@ -1445,7 +1399,9 @@ setupSandboxMode() {
 
     removeMonster(monster) {
         this.entities.delete(monster);
-        this.scheduler.remove(monster);
+        if (this.scheduler) {
+            this.scheduler.remove(monster);
+        }
     }
 
     processMonsterTurn() {
