@@ -348,6 +348,48 @@ const monsterBehaviors = {
     hydra: Hydra
 };
 
+function getMonsterSpawnWeights(depth) {
+    const weights = {};
+
+    if (!depth || depth < 1) {
+        depth = 1;
+    }
+
+    if (typeof MONSTERS === 'undefined') {
+        return weights;
+    }
+
+    for (const [id, data] of Object.entries(MONSTERS)) {
+        const minDepth = data.level || 1;
+        const maxDepth = data.maxDepth || Infinity;
+
+        if (depth < minDepth || depth > maxDepth) {
+            continue;
+        }
+
+        let weight = data.spawnWeight != null ? data.spawnWeight : 5;
+        const scaling = data.depthScaling || 0;
+
+        if (scaling !== 0) {
+            const depthDelta = depth - minDepth;
+            weight += depthDelta * scaling;
+        }
+
+        weight = Math.max(1, Math.floor(weight));
+
+        if (weight > 0) {
+            weights[id] = weight;
+        }
+    }
+
+    if (Object.keys(weights).length === 0) {
+        weights.rat = 1;
+    }
+
+    return weights;
+}
+
 // Export functions
 window.setupMonsterRenderers = setupMonsterRenderers;
 window.monsterBehaviors = monsterBehaviors;
+window.getMonsterSpawnWeights = getMonsterSpawnWeights;

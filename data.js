@@ -23,6 +23,7 @@ class GameData {
                 },
                 gameMode: this.game.gameMode,
                 level: this.game.level,
+                depth: this.game.depth,
                 turns: this.game.turns,
                 mapBounds: this.game.mapBounds,
                 timestamp: Date.now()
@@ -64,7 +65,9 @@ class GameData {
             
             Object.assign(this.game.player, saveData.player);
             
-            this.game.level = saveData.level || 1;
+            const depth = saveData.depth || saveData.level || 1;
+            this.game.depth = depth;
+            this.game.level = depth;
             this.game.turns = saveData.turns || 0;
             
             if (this.game.gameMode === 'arena' && saveData.arena) {
@@ -74,7 +77,13 @@ class GameData {
             
             this.game.player.computeFOV();
             this.game.drawGame();
-            
+            if (typeof this.game.updateStats === 'function') {
+                this.game.updateStats();
+            }
+            if (typeof updatePlayerStats === 'function') {
+                updatePlayerStats();
+            }
+
             this.game.addMessage("Game loaded successfully", CONFIG.colors.ui.highlight);
             return true;
         } catch (err) {
