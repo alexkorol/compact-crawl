@@ -53,6 +53,10 @@ class Player extends Entity {
             return this.visibleTiles;
         }
 
+        if (!game.explored) {
+            game.explored = {};
+        }
+
         console.log("Computing FOV from", this.x, this.y);
 
         const radius = game.FOV_RADIUS || 8;
@@ -671,11 +675,16 @@ class Monster extends Entity {
 
     draw(ctx, offsetX, offsetY, tileSize) {
         super.draw(ctx, offsetX, offsetY, tileSize);
-        
+
+        const game = window.game;
+        if (!game || typeof game.isVisible !== 'function') {
+            return;
+        }
+
         // Draw segments for snake/tentacle monsters
-        if (this.segments.length > 0 && 
-           (this.behavior === "serpentine" || 
-            this.behavior === "tentacle" || 
+        if (this.segments.length > 0 &&
+           (this.behavior === "serpentine" ||
+            this.behavior === "tentacle" ||
             this.behavior === "multi_tentacle")) {
             
             for (let i = this.segments.length - 1; i >= 0; i--) {

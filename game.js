@@ -838,138 +838,102 @@ setupSandboxMode() {
     }
 
     drawGame() {
-        console.log('Drawing game state');
-        
         try {
+            if (!this.display || !this.player || !this.mapBounds || !this.map) {
+                return false;
+            }
+
             this.display.clear();
-            
+
             const displayWidth = this.display.getOptions().width;
             const displayHeight = this.display.getOptions().height;
-            
-            // Draw UI elements first (background layer)
+            const colors = CONFIG.colors;
+
             this.drawUIBackground();
-            
-            // Calculate visible area edge tiles for debugging
-            const visibleEdges = {
-                top: [],
-                right: [],
-                bottom: [],
-                left: []
-            };
-            
-            // Draw the map
-            for (let y = this.mapBounds.minY; y <= this.mapBounds.maxY; y++) {
-                for (let x = 0; x <= this.mapBounds.maxX; x++) {
+
+            const { minX, maxX, minY, maxY } = this.mapBounds;
+            const exploredMap = this.explored || {};
+            for (let y = minY; y <= maxY; y++) {
+                for (let x = minX; x <= maxX; x++) {
                     const key = `${x},${y}`;
-                    
-                    // If this is an edge, add it to our debug tracker
-                    if (y === this.mapBounds.minY) visibleEdges.top.push(key);
-                    if (y === this.mapBounds.maxY) visibleEdges.bottom.push(key);
-                    if (x === 0) visibleEdges.left.push(key);
-                    if (x === this.mapBounds.maxX) visibleEdges.right.push(key);
-                    
-                    // Draw the tile if it exists
-                    if (key in this.map) {
-                        const tile = this.map[key];
-                        
-                        if (key in this.player.visibleTiles) {
-                            // Visible tile
-                            this.display.draw(x, y, tile, tile === '#' ? '#666' : '#aaa');
-                        } else if (key in this.explored) {
-                            // Explored but not visible
-                            this.display.draw(x, y, tile, tile === '#' ? '#444' : '#666');
-                        } 
-                        // Always draw walls for debugging
-                        else if (tile === '#') {
-                            this.display.draw(x, y, tile, '#444');
-                        }
+                    const tile = this.map[key];
+                    const visible = this.isVisible(x, y);
+                    const explored = !!exploredMap[key];
+
+                    if (!visible && !explored) {
+                        continue;
                     }
+
+                    const glyph = tile === 'i' ? this.FLOOR_TILE : (tile || this.WALL_TILE);
+                    const isWall = glyph === this.WALL_TILE;
+                    const foreground = isWall
+                        ? (visible ? colors.wall.visible : colors.wall.explored)
+                        : (visible ? colors.floor.visible : colors.floor.explored);
+
+                    this.display.draw(x, y, glyph, foreground);
                 }
             }
-            
-            // Log edge tiles for debugging
-            console.log("Edge tiles:");
-            for (const edge in visibleEdges) {
-                console.log(`  ${edge}: ${visibleEdges[edge].length} tiles`);
+
+            for (const item of this.items || []) {
+                if (!this.isVisible(item.x, item.y)) {
+                    continue;
+                }
+                this.display.draw(item.x, item.y, item.symbol, item.color);
             }
-            
-            // Draw entities
-            console.log("Drawing entities:", this.entities.size);
-            for (const entity of this.entities) {
-                if (entity === this.player) continue; // Draw player last
-                
-                console.log("Drawing entity at", entity.x, entity.y, 
-                            "Symbol:", entity.symbol || '?', 
-                            "Is visible:", !!this.player.visibleTiles[`${entity.x},${entity.y}`]);
-                
-                // Make sure entity is within map bounds
-                if (entity.x <= this.mapBounds.maxX && 
-                    entity.y <= this.mapBounds.maxY &&
-                    entity.x >= this.mapBounds.minX &&
-                    entity.y >= this.mapBounds.minY) {
-                        
-                    const key = `${entity.x},${entity.y}`;
-                    if (key in this.player.visibleTiles) {
-                        this.display.draw(entity.x, entity.y, entity.symbol || 'g', entity.color || '#5aa');
-                    }
-                } else {
-                    console.warn("Entity out of bounds:", entity);
+
+            if (this.entities) {
+                for (const entity of this.entities) {
+                    if (entity === this.player) continue;
+                    if (!this.isVisible(entity.x, entity.y)) continue;
+
+                    this.display.draw(entity.x, entity.y, entity.symbol || 'g', entity.color || colors.entities.monster.goblin);
                 }
             }
-            
-            // Draw player
-            this.display.draw(this.player.x, this.player.y, '@', '#ff0');
-            
-            // Draw Stats Header
+
+            this.display.draw(this.player.x, this.player.y, this.player.symbol, colors.entities.player);
+
             const statsText = `HP: ${this.player.hp}/${this.player.maxHp} | Level: ${this.player.level} | XP: ${this.player.exp} | Gold: ${this.player.gold || 0}`;
-            this.display.drawText(1, 0, `%c{#fff}%b{#000}${statsText.padEnd(displayWidth - 2)}`);
-            
-            // Draw top divider
+            this.display.drawText(1, 0, `%c{${colors.ui.text}}%b{#000}${statsText.padEnd(displayWidth - 2)}`);
+
             for (let x = 0; x < displayWidth; x++) {
                 this.display.draw(x, 1, '─', '#555');
-            }
-            
-            // Draw bottom divider
-            for (let x = 0; x < displayWidth; x++) {
                 this.display.draw(x, displayHeight - 4, '─', '#555');
             }
-            
-            // Draw messages
+
             if (this.messages && this.messages.length > 0) {
                 for (let i = 0; i < Math.min(3, this.messages.length); i++) {
                     const msg = this.messages[i];
                     const text = msg.text.padEnd(displayWidth - 2);
-                    this.display.drawText(1, displayHeight - 3 + i, 
-                        `%c{${msg.color || '#fff'}}%b{#000}${text}`);
+                    this.display.drawText(1, displayHeight - 3 + i,
+                        `%c{${msg.color || colors.ui.text}}%b{#000}${text}`);
                 }
             }
-            
-            // Draw grid lines for sandbox mode
+
             if (this.gameMode === 'sandbox' && this.showGrid) {
-                // Draw vertical grid lines
-                for (let x = 0; x <= this.mapBounds.maxX; x++) {
-                    for (let y = this.mapBounds.minY; y <= this.mapBounds.maxY; y++) {
-                        // Draw a light vertical line
-                        this.display.draw(x, y, this.map[`${x},${y}`], null, x % 5 === 0 ? '#444' : '#333');
+                for (let x = minX; x <= maxX; x++) {
+                    const isVerticalLine = x % 5 === 0;
+                    if (!isVerticalLine) continue;
+                    for (let y = minY; y <= maxY; y++) {
+                        if (!this.isVisible(x, y) && !exploredMap[`${x},${y}`]) continue;
+                        const baseTile = this.map[`${x},${y}`] || this.WALL_TILE;
+                        const glyph = baseTile === 'i' ? this.FLOOR_TILE : baseTile;
+                        this.display.draw(x, y, glyph, null, '#444');
                     }
                 }
-                
-                // Draw horizontal grid lines
-                for (let y = this.mapBounds.minY; y <= this.mapBounds.maxY; y++) {
-                    for (let x = 0; x <= this.mapBounds.maxX; x++) {
-                        // Draw a light horizontal line
-                        if (y % 5 === 0) {
-                            const tile = this.map[`${x},${y}`];
-                            this.display.draw(x, y, tile, null, '#444');
-                        }
+
+                for (let y = minY; y <= maxY; y++) {
+                    const isHorizontalLine = y % 5 === 0;
+                    if (!isHorizontalLine) continue;
+                    for (let x = minX; x <= maxX; x++) {
+                        if (!this.isVisible(x, y) && !exploredMap[`${x},${y}`]) continue;
+                        const baseTile = this.map[`${x},${y}`] || this.WALL_TILE;
+                        const glyph = baseTile === 'i' ? this.FLOOR_TILE : baseTile;
+                        this.display.draw(x, y, glyph, null, '#444');
                     }
                 }
             }
-            
-            // Update external UI state (keep it hidden)
+
             this.updateExternalUI();
-            
-            console.log('Draw complete');
             return true;
         } catch (err) {
             console.error('Error in drawGame:', err);
@@ -1109,22 +1073,27 @@ setupSandboxMode() {
             }
         }
         
-        // Check for item
+        let pickedItem = null;
+        let pickedIndex = -1;
         for (let i = 0; i < this.items.length; i++) {
             const item = this.items[i];
             if (item.x === newX && item.y === newY) {
-                // Pick up item
-                this.pickUpItem(item, i);
-                return true;
+                pickedItem = item;
+                pickedIndex = i;
+                break;
             }
         }
-        
-        // No obstacles, move player
+
         console.log(`Moving player to ${newX},${newY}`);
         this.player.x = newX;
         this.player.y = newY;
         this.player.computeFOV();
         this.turns++;
+
+        if (pickedItem) {
+            this.pickUpItem(pickedItem, pickedIndex);
+        }
+
         this.drawGame(); // Redraw after movement
 
         return true;
@@ -1296,47 +1265,7 @@ setupSandboxMode() {
     }
 
     draw() {
-        if (this.gameState !== 'playing') return;
-        
-        console.log('Drawing game state');
-        this.display.clear();
-        
-        // Draw map with FOV
-        for (let key in this.map) {
-            const [x, y] = key.split(',').map(Number);
-            const tile = this.map[key];
-            if (key in this.player.visibleTiles) {
-                // Visible tiles
-                this.display.draw(x, y, tile, tile === this.WALL_TILE ? CONFIG.colors.wall.visible : CONFIG.colors.floor.visible);
-            } else if (key in this.explored) {
-                // Explored but not visible tiles
-                this.display.draw(x, y, tile, tile === this.WALL_TILE ? CONFIG.colors.wall.explored : CONFIG.colors.floor.explored);
-            }
-        }
-        
-        // Draw items (only if visible)
-        for (const item of this.items) {
-            const key = `${item.x},${item.y}`;
-            if (key in this.player.visibleTiles) {
-                this.display.draw(item.x, item.y, item.symbol, item.color);
-            }
-        }
-        
-        // Draw entities (only if visible)
-        for (const entity of this.entities) {
-            if (entity === this.player) continue; // Player drawn last
-            const key = `${entity.x},${entity.y}`;
-            if (key in this.player.visibleTiles) {
-                this.display.draw(entity.x, entity.y, entity.symbol, entity.color);
-            }
-        }
-        
-        // Draw player
-        this.display.draw(this.player.x, this.player.y, '@', CONFIG.colors.entities.player);
-        
-        // Draw messages and stats
-        this.drawMessages();
-        this.drawStats();
+        return this.drawGame();
     }
 
     drawMessages() {
@@ -1393,8 +1322,12 @@ setupSandboxMode() {
     }
 
     isVisible(x, y) {
+        if (!this.player || !this.player.visibleTiles) {
+            return false;
+        }
+
         const key = `${x},${y}`;
-        return this.player.visibleTiles[key];
+        return !!this.player.visibleTiles[key];
     }
 
     removeMonster(monster) {
