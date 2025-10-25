@@ -60,7 +60,10 @@ const MONSTERS = {
         level: 1,
         speed: 100,
         abilities: [],
-        behavior: "melee"
+        behavior: "melee",
+        spawnWeight: 12,
+        depthScaling: -1,
+        maxDepth: 5
     },
     snake: {
         name: "Cave Snake",
@@ -75,7 +78,10 @@ const MONSTERS = {
         speed: 100, // Reduced from 120 to match player speed
         abilities: ["poison"],
         behavior: "serpentine",
-        segments: 4
+        segments: 4,
+        spawnWeight: 10,
+        depthScaling: -1,
+        maxDepth: 6
     },
     goblin: {
         name: "Goblin",
@@ -89,7 +95,9 @@ const MONSTERS = {
         level: 2,
         speed: 100,
         abilities: [],
-        behavior: "melee" // Ensures goblin uses meleeMovement
+        behavior: "melee", // Ensures goblin uses meleeMovement
+        spawnWeight: 8,
+        depthScaling: 1
     },
     orc: {
         name: "Orc Warrior",
@@ -102,7 +110,9 @@ const MONSTERS = {
         exp: 8,
         level: 3,
         speed: 90,
-        abilities: ["rage"]
+        abilities: ["rage"],
+        spawnWeight: 5,
+        depthScaling: 2
     },
     troll: {
         name: "Cave Troll",
@@ -115,7 +125,9 @@ const MONSTERS = {
         exp: 15,
         level: 5,
         speed: 80,
-        abilities: ["regeneration"]
+        abilities: ["regeneration"],
+        spawnWeight: 2,
+        depthScaling: 2
     },
     wisp: {
         name: "Will-o-wisp",
@@ -129,7 +141,9 @@ const MONSTERS = {
         level: 2,
         speed: 150,
         abilities: ["lighting"],
-        behavior: "random"
+        behavior: "random",
+        spawnWeight: 4,
+        depthScaling: 1
     },
     kraken: {
         name: "Kraken Spawn",
@@ -145,7 +159,9 @@ const MONSTERS = {
         abilities: ["grab"],
         behavior: "tentacle",
         segments: 6,
-        tentacleColor: ["#089", "#067", "#056", "#045", "#034"]
+        tentacleColor: ["#089", "#067", "#056", "#045", "#034"],
+        spawnWeight: 1,
+        depthScaling: 2
     },
     shoggoth: {
         name: "Shoggoth",
@@ -161,7 +177,9 @@ const MONSTERS = {
         abilities: ["dissolve", "split"],
         behavior: "tentacle",
         segments: 8,
-        tentacleColor: ["#90d", "#80c", "#70b", "#609", "#508", "#407"]
+        tentacleColor: ["#90d", "#80c", "#70b", "#609", "#508", "#407"],
+        spawnWeight: 1,
+        depthScaling: 2
     },
     hydra: {
         name: "Cave Hydra",
@@ -178,7 +196,9 @@ const MONSTERS = {
         behavior: "multi_tentacle",
         segments: 5,
         heads: 3,
-        tentacleColor: ["#0b0", "#090", "#070", "#050"]
+        tentacleColor: ["#0b0", "#090", "#070", "#050"],
+        spawnWeight: 1,
+        depthScaling: 2
     }
 };
 
@@ -191,7 +211,9 @@ const ITEMS = {
         type: "potion",
         effect: "heal",
         power: 10,
-        stackable: true
+        stackable: true,
+        baseWeight: 18,
+        depthScaling: 0
     },
     strengthPotion: {
         name: "Strength Potion",
@@ -201,7 +223,10 @@ const ITEMS = {
         effect: "strength",
         power: 2,
         duration: 20,
-        stackable: true
+        stackable: true,
+        minDepth: 2,
+        baseWeight: 4,
+        depthScaling: 1
     },
     shortSword: {
         name: "Short Sword",
@@ -210,7 +235,10 @@ const ITEMS = {
         type: "weapon",
         slot: "hand",
         attack: 3,
-        stackable: false
+        stackable: false,
+        maxDepth: 5,
+        baseWeight: 9,
+        depthScaling: -2
     },
     longsword: {
         name: "Longsword",
@@ -219,7 +247,10 @@ const ITEMS = {
         type: "weapon",
         slot: "hand",
         attack: 5,
-        stackable: false
+        stackable: false,
+        minDepth: 3,
+        baseWeight: 2,
+        depthScaling: 2
     },
     leatherArmor: {
         name: "Leather Armor",
@@ -228,7 +259,10 @@ const ITEMS = {
         type: "armor",
         slot: "body",
         defense: 1,
-        stackable: false
+        stackable: false,
+        maxDepth: 5,
+        baseWeight: 8,
+        depthScaling: -1
     },
     chainmail: {
         name: "Chainmail",
@@ -237,7 +271,10 @@ const ITEMS = {
         type: "armor",
         slot: "body",
         defense: 3,
-        stackable: false
+        stackable: false,
+        minDepth: 3,
+        baseWeight: 2,
+        depthScaling: 2
     },
     bread: {
         name: "Bread Ration",
@@ -245,7 +282,9 @@ const ITEMS = {
         color: CONFIG.colors.entities.item.food,
         type: "food",
         nutrition: 300,
-        stackable: true
+        stackable: true,
+        baseWeight: 10,
+        depthScaling: -1
     },
     scrollMagicMapping: {
         name: "Scroll of Magic Mapping",
@@ -253,7 +292,10 @@ const ITEMS = {
         color: CONFIG.colors.entities.item.scroll,
         type: "scroll",
         effect: "magic_mapping",
-        stackable: true
+        stackable: true,
+        minDepth: 2,
+        baseWeight: 3,
+        depthScaling: 1
     },
     scrollTeleport: {
         name: "Scroll of Teleportation",
@@ -261,9 +303,47 @@ const ITEMS = {
         color: CONFIG.colors.entities.item.scroll,
         type: "scroll",
         effect: "teleport",
-        stackable: true
+        stackable: true,
+        minDepth: 3,
+        baseWeight: 3,
+        depthScaling: 2
     }
 };
+
+function getItemSpawnWeights(depth) {
+    const weights = {};
+
+    if (!depth || depth < 1) {
+        depth = 1;
+    }
+
+    for (const [id, item] of Object.entries(ITEMS)) {
+        const minDepth = item.minDepth || 1;
+        const maxDepth = item.maxDepth || Infinity;
+
+        if (depth < minDepth || depth > maxDepth) {
+            continue;
+        }
+
+        let weight = item.baseWeight != null ? item.baseWeight : 5;
+        const scaling = item.depthScaling || 0;
+
+        if (scaling !== 0) {
+            const depthDelta = depth - minDepth;
+            weight += depthDelta * scaling;
+        }
+
+        weight = Math.max(1, Math.floor(weight));
+
+        if (weight > 0) {
+            weights[id] = weight;
+        }
+    }
+
+    return weights;
+}
+
+window.getItemSpawnWeights = getItemSpawnWeights;
 
 // Player skills
 const SKILLS = {

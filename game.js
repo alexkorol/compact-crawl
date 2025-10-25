@@ -5,6 +5,8 @@ class Game {
         this.FOV_RADIUS = 8;
         this.WALL_TILE = '#';
         this.FLOOR_TILE = '.';
+        this.depth = 1;
+        this.playerUsedStairs = false;
         
         // Initialize display
         this.display = new ROT.Display({
@@ -161,19 +163,22 @@ class Game {
         this.items = [];
         this.explored = {};
         this.messages = [];
-        
+        this.turns = 0;
+        this.depth = 1;
+        this.level = 1;
+
         try {
             // Get display dimensions
             const displayWidth = this.display.getOptions().width;
             const displayHeight = this.display.getOptions().height;
-            
+
             // Calculate actual playable area (accounting for UI)
             const topUIHeight = 2;  // Status bar (2 rows at top)
             const bottomUIHeight = 4;  // Message box (3 rows at bottom) + divider (1 row)
-            
+
             // Fix the right wall coordinate to 42 now
             const rightWallX = 42;
-            
+
             // Calculate bounds - note these are INCLUSIVE
             this.mapBounds = {
                 minX: 0,
@@ -181,96 +186,38 @@ class Game {
                 minY: topUIHeight,
                 maxY: displayHeight - bottomUIHeight - 1
             };
-            
+
             console.log("Map bounds:", this.mapBounds);
-            
-            // Use the dungeon generator to create the play area
+
             if (!this.dungeonGenerator) {
                 this.dungeonGenerator = new DungeonGenerator(this);
             }
 
-            const mapWidth = this.mapBounds.maxX - this.mapBounds.minX + 1;
-            const mapHeight = this.mapBounds.maxY - this.mapBounds.minY + 1;
-            const dungeon = this.dungeonGenerator.generateStandard(mapWidth, mapHeight, this.level || 1);
+            this.prepareLevel(this.depth, 'start', { preservePlayer: false });
 
-            this.map = {};
-
-            for (let y = 0; y < mapHeight; y++) {
-                for (let x = 0; x < mapWidth; x++) {
-                    const globalX = this.mapBounds.minX + x;
-                    const globalY = this.mapBounds.minY + y;
-                    const localKey = `${x},${y}`;
-
-                    let tile = dungeon.map[localKey];
-                    if (!tile) {
-                        tile = this.WALL_TILE;
-                    }
-
-                    tile = tile === this.WALL_TILE ? this.WALL_TILE : this.FLOOR_TILE;
-
-                    if (x === 0 || y === 0 || x === mapWidth - 1 || y === mapHeight - 1) {
-                        tile = this.WALL_TILE;
-                    }
-
-                    this.map[`${globalX},${globalY}`] = tile;
-                }
-            }
-
-            this.freeCells = dungeon.freeCells.map(cell => ({
-                x: cell.x + this.mapBounds.minX,
-                y: cell.y + this.mapBounds.minY
-            }));
-
-            const fallbackLocal = dungeon.freeCells.length > 0
-                ? dungeon.freeCells[0]
-                : { x: Math.floor(mapWidth / 2), y: Math.floor(mapHeight / 2) };
-            const startPosition = dungeon.startPosition || fallbackLocal;
-            const startLocalX = Array.isArray(startPosition) ? startPosition[0] : startPosition.x;
-            const startLocalY = Array.isArray(startPosition) ? startPosition[1] : startPosition.y;
-            const startX = startLocalX + this.mapBounds.minX;
-            const startY = startLocalY + this.mapBounds.minY;
-
-            this.player = new Player(startX, startY);
-
-            // Initialize game state
-            this.entities = new Set([this.player]);
-            this.level = 1;
-            this.turns = 0;
-
-            // Reset any existing scheduler/engine
-            if (this.engine) {
-                this.engine.lock();
-            }
-            this.scheduler = new ROT.Scheduler.Simple();
-            this.scheduler.add(this.player, false);
-            this.engine = new ROT.Engine(this.scheduler);
-            
             // Set up game based on selected mode
             switch(gameMode) {
                 case 'main':
-                    // Normal game setup - already handled by existing code
-                    this.spawnTestMonsters();
                     this.addMessage(`Welcome to the main game mode!`, "#ff0");
                     break;
                 case 'arena':
-                    // Arena mode setup
                     this.setupArenaMode();
                     break;
                 case 'sandbox':
-                    // Sandbox mode setup
                     this.setupSandboxMode();
                     break;
             }
-            
+
+            this.updateStats();
+            if (typeof updatePlayerStats === 'function') {
+                updatePlayerStats();
+            }
+
+            this.drawGame();
+
             // Setup input handler - make sure we bind it and store the bound reference
             this.boundHandleKeyDown = this.handleKeyDown.bind(this);
             document.addEventListener('keydown', this.boundHandleKeyDown);
-            
-            // Compute initial FOV
-            this.player.computeFOV();
-
-            // Draw initial state
-            this.drawGame();
 
             // Add welcome message
             this.addMessage("Welcome to the dungeon!", "#ff0");
@@ -284,7 +231,255 @@ class Game {
             return false;
         }
     }
-    
+
+    prepareLevel(depth, entry = 'start', options = {}) {
+        if (!this.mapBounds) {
+            throw new Error('Map bounds are not initialized');
+        }
+
+        if (!this.dungeonGenerator) {
+            this.dungeonGenerator = new DungeonGenerator(this);
+        }
+
+        if (this.engine) {
+            this.engine.lock();
+        }
+
+        const mapWidth = this.mapBounds.maxX - this.mapBounds.minX + 1;
+        const mapHeight = this.mapBounds.maxY - this.mapBounds.minY + 1;
+        const dungeon = this.dungeonGenerator.generateStandard(mapWidth, mapHeight, depth);
+
+        const toGlobal = ({ x, y }) => ({
+            x: x + this.mapBounds.minX,
+            y: y + this.mapBounds.minY
+        });
+
+        this.map = {};
+
+        for (let y = 0; y < mapHeight; y++) {
+            for (let x = 0; x < mapWidth; x++) {
+                const globalX = this.mapBounds.minX + x;
+                const globalY = this.mapBounds.minY + y;
+                const localKey = `${x},${y}`;
+                let tile = dungeon.map[localKey];
+
+                if (!tile) {
+                    tile = this.WALL_TILE;
+                } else if (tile === this.WALL_TILE) {
+                    tile = this.WALL_TILE;
+                } else if (tile === '<' || tile === '>' || tile === 'i') {
+                    // Preserve special tiles
+                } else {
+                    tile = this.FLOOR_TILE;
+                }
+
+                if (x === 0 || y === 0 || x === mapWidth - 1 || y === mapHeight - 1) {
+                    tile = this.WALL_TILE;
+                }
+
+                this.map[`${globalX},${globalY}`] = tile;
+            }
+        }
+
+        this.freeCells = dungeon.freeCells.map(cell => toGlobal(cell));
+        this.upstairsPosition = dungeon.upstairsPosition ? toGlobal(dungeon.upstairsPosition) : null;
+        this.downstairsPosition = dungeon.downstairsPosition ? toGlobal(dungeon.downstairsPosition) : null;
+
+        const rawItems = this.dungeonGenerator.placeItems(depth, dungeon.map, dungeon.freeCells, dungeon.rooms) || [];
+        this.items = rawItems.map(item => ({
+            ...item,
+            x: item.x + this.mapBounds.minX,
+            y: item.y + this.mapBounds.minY
+        }));
+
+        const spawnLocal = this.determineSpawnLocation(dungeon, entry);
+        const spawnGlobal = toGlobal(spawnLocal);
+
+        this.depth = depth;
+        this.level = depth;
+
+        const preservePlayer = options.preservePlayer || false;
+        if (!preservePlayer || !this.player) {
+            this.player = new Player(spawnGlobal.x, spawnGlobal.y);
+        } else {
+            this.player.x = spawnGlobal.x;
+            this.player.y = spawnGlobal.y;
+        }
+
+        this.player.visibleTiles = {};
+        this.explored = {};
+
+        this.entities = new Set([this.player]);
+        this.scheduler = new ROT.Scheduler.Simple();
+        this.scheduler.add(this.player, false);
+
+        const monsters = this.createMonstersForDungeon(dungeon, depth, toGlobal, spawnLocal);
+        for (const monster of monsters) {
+            this.addMonster(monster);
+        }
+
+        this.engine = new ROT.Engine(this.scheduler);
+
+        this.player.computeFOV();
+        this.drawGame();
+        this.updateStats();
+        if (typeof updatePlayerStats === 'function') {
+            updatePlayerStats();
+        }
+
+        this.playerUsedStairs = false;
+
+        return { spawn: spawnGlobal, dungeon };
+    }
+
+    determineSpawnLocation(dungeon, entry) {
+        const fallback = this.normalizePosition(
+            dungeon.startPosition ||
+            (dungeon.freeCells && dungeon.freeCells.length > 0
+                ? dungeon.freeCells[0]
+                : { x: 0, y: 0 })
+        );
+
+        if (entry === 'down' && dungeon.upstairsPosition) {
+            return this.normalizePosition(dungeon.upstairsPosition, fallback);
+        }
+
+        if (entry === 'up' && dungeon.downstairsPosition) {
+            return this.normalizePosition(dungeon.downstairsPosition, fallback);
+        }
+
+        return fallback;
+    }
+
+    normalizePosition(position, fallback = { x: 0, y: 0 }) {
+        if (!position) {
+            return { x: fallback.x, y: fallback.y };
+        }
+
+        if (Array.isArray(position)) {
+            return { x: position[0], y: position[1] };
+        }
+
+        return { x: position.x, y: position.y };
+    }
+
+    createMonstersForDungeon(dungeon, depth, toGlobal, spawnLocal) {
+        if (!dungeon || !dungeon.rooms) {
+            return [];
+        }
+
+        const weightEntries = this.getMonsterWeightEntries(depth);
+        if (weightEntries.length === 0) {
+            return [];
+        }
+
+        const monsters = [];
+        const blocked = new Set();
+        blocked.add(`${spawnLocal.x},${spawnLocal.y}`);
+
+        if (dungeon.upstairsPosition) {
+            blocked.add(`${dungeon.upstairsPosition.x},${dungeon.upstairsPosition.y}`);
+        }
+
+        if (dungeon.downstairsPosition) {
+            blocked.add(`${dungeon.downstairsPosition.x},${dungeon.downstairsPosition.y}`);
+        }
+
+        const startRoom = dungeon.rooms[0];
+        const candidateRooms = dungeon.rooms.filter(room => room !== startRoom);
+        const roomsToUse = candidateRooms.length > 0 ? candidateRooms : dungeon.rooms;
+        const monsterCap = Math.min(
+            roomsToUse.length * 2,
+            Math.max(3, Math.floor(depth * 1.5) + 2)
+        );
+
+        for (let i = 0; i < monsterCap; i++) {
+            const room = ROT.RNG.getItem(roomsToUse);
+            const localPos = this.findSpawnPositionInRoom(room, blocked, dungeon.map);
+            if (!localPos) {
+                continue;
+            }
+
+            const type = this.pickMonsterTypeForDepth(depth, weightEntries);
+            if (!type) {
+                break;
+            }
+
+            const monsterData = MONSTERS[type];
+            const globalPos = toGlobal(localPos);
+            const monster = new Monster(globalPos.x, globalPos.y, monsterData);
+            monster.type = monster.type || type;
+            monsters.push(monster);
+            blocked.add(`${localPos.x},${localPos.y}`);
+        }
+
+        return monsters;
+    }
+
+    findSpawnPositionInRoom(room, blocked, map) {
+        if (!room) {
+            return null;
+        }
+
+        for (let attempt = 0; attempt < 10; attempt++) {
+            const candidate = this.normalizePosition(room.getRandomPosition());
+            const key = `${candidate.x},${candidate.y}`;
+            if (blocked.has(key)) {
+                continue;
+            }
+
+            if (map[key] === this.FLOOR_TILE || map[key] === '.') {
+                return candidate;
+            }
+        }
+
+        const center = this.normalizePosition(room.getCenter());
+        const centerKey = `${center.x},${center.y}`;
+        if (!blocked.has(centerKey) && (map[centerKey] === this.FLOOR_TILE || map[centerKey] === '.')) {
+            return center;
+        }
+
+        return null;
+    }
+
+    getMonsterWeightEntries(depth) {
+        let weights = {};
+
+        if (typeof getMonsterSpawnWeights === 'function') {
+            weights = getMonsterSpawnWeights(depth) || {};
+        } else if (this.dungeonGenerator && typeof this.dungeonGenerator.calculateMonsterWeights === 'function') {
+            weights = this.dungeonGenerator.calculateMonsterWeights(depth) || {};
+        }
+
+        return Object.entries(weights).filter(([type, weight]) => weight > 0 && MONSTERS[type]);
+    }
+
+    pickMonsterTypeForDepth(depth, weightEntries = null) {
+        let entries = weightEntries;
+        if (!entries || entries.length === 0) {
+            entries = this.getMonsterWeightEntries(depth);
+        }
+
+        if (!entries || entries.length === 0) {
+            return null;
+        }
+
+        const total = entries.reduce((sum, [, weight]) => sum + weight, 0);
+        if (total <= 0) {
+            return null;
+        }
+
+        let roll = Math.floor(ROT.RNG.getUniform() * total);
+        for (const [type, weight] of entries) {
+            roll -= weight;
+            if (roll < 0) {
+                return type;
+            }
+        }
+
+        return entries[0][0];
+    }
+
     // Add new methods for special game modes
     setupArenaMode() {
         // Add arena-specific setup
@@ -892,7 +1087,7 @@ setupSandboxMode() {
 
             this.display.draw(this.player.x, this.player.y, this.player.symbol, colors.entities.player);
 
-            const statsText = `HP: ${this.player.hp}/${this.player.maxHp} | Level: ${this.player.level} | XP: ${this.player.exp} | Gold: ${this.player.gold || 0}`;
+            const statsText = `HP: ${this.player.hp}/${this.player.maxHp} | Level: ${this.player.level} | XP: ${this.player.exp} | Gold: ${this.player.gold || 0} | Depth: ${this.depth}`;
             this.display.drawText(1, 0, `%c{${colors.ui.text}}%b{#000}${statsText.padEnd(displayWidth - 2)}`);
 
             for (let x = 0; x < displayWidth; x++) {
@@ -1043,9 +1238,14 @@ setupSandboxMode() {
 
         if (e.key in keyMap) {
             const [dx, dy] = keyMap[e.key];
+            this.playerUsedStairs = false;
 
             // Try moving or attacking
             if (this.tryPlayerAction(dx, dy)) {
+                if (this.playerUsedStairs) {
+                    this.playerUsedStairs = false;
+                    return;
+                }
                 this.endPlayerTurn();
             }
         }
@@ -1062,17 +1262,21 @@ setupSandboxMode() {
             console.log(`Cannot move to ${newX},${newY} - wall or out of bounds`);
             return false;
         }
-        
+
         // Check for monster at target position
         for (const entity of this.entities) {
             if (entity !== this.player && entity.x === newX && entity.y === newY) {
                 console.log(`Found monster at ${newX},${newY}, attacking!`);
                 this.attackEntity(entity);
                 this.drawGame(); // Redraw after combat
+                this.updateStats();
+                if (typeof updatePlayerStats === 'function') {
+                    updatePlayerStats();
+                }
                 return true;
             }
         }
-        
+
         let pickedItem = null;
         let pickedIndex = -1;
         for (let i = 0; i < this.items.length; i++) {
@@ -1087,16 +1291,55 @@ setupSandboxMode() {
         console.log(`Moving player to ${newX},${newY}`);
         this.player.x = newX;
         this.player.y = newY;
-        this.player.computeFOV();
         this.turns++;
 
         if (pickedItem) {
             this.pickUpItem(pickedItem, pickedIndex);
         }
 
-        this.drawGame(); // Redraw after movement
+        const tileType = this.map[key];
+        let usedStairs = false;
+        if (tileType === '>' || tileType === '<') {
+            usedStairs = this.useStairs(tileType);
+        }
+
+        if (!usedStairs) {
+            this.player.computeFOV();
+            this.drawGame();
+            this.updateStats();
+            if (typeof updatePlayerStats === 'function') {
+                updatePlayerStats();
+            }
+        }
 
         return true;
+    }
+
+    useStairs(tileType) {
+        if (tileType === '>') {
+            const newDepth = this.depth + 1;
+            this.prepareLevel(newDepth, 'down', { preservePlayer: true });
+            this.addMessage(`You descend to depth ${newDepth}.`, CONFIG.colors.ui.info);
+            this.playerUsedStairs = true;
+            this.engine.start();
+            return true;
+        }
+
+        if (tileType === '<') {
+            if (this.depth <= 1) {
+                this.addMessage('You cannot ascend any further.', CONFIG.colors.ui.warning);
+                return false;
+            }
+
+            const newDepth = this.depth - 1;
+            this.prepareLevel(newDepth, 'up', { preservePlayer: true });
+            this.addMessage(`You ascend to depth ${newDepth}.`, CONFIG.colors.ui.info);
+            this.playerUsedStairs = true;
+            this.engine.start();
+            return true;
+        }
+
+        return false;
     }
 
     endPlayerTurn() {
@@ -1281,7 +1524,7 @@ setupSandboxMode() {
     drawStats() {
         // Draw player stats at top
         let statsText = `HP: ${this.player.hp}/${this.player.maxHp} | Atk: ${this.player.attack} | Def: ${this.player.defense}`;
-        statsText += ` | Lvl: ${this.player.level} | XP: ${this.player.exp} | Gold: ${this.player.gold || 0}`;
+        statsText += ` | Lvl: ${this.player.level} | XP: ${this.player.exp} | Gold: ${this.player.gold || 0} | Depth: ${this.depth}`;
         this.display.drawText(1, 0, `%c{${CONFIG.colors.ui.text}}${statsText}`);
     }
 
@@ -1294,7 +1537,7 @@ setupSandboxMode() {
                 <div>Defense: ${this.player.defense}</div>
                 <div>Level: ${this.player.level}</div>
                 <div>Exp: ${this.player.exp}</div>
-                <div>Dungeon Level: ${this.level}</div>
+                <div>Depth: ${this.depth}</div>
             `;
         }
     }

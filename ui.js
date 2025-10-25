@@ -11,7 +11,7 @@ function updatePlayerStats() {
         <div>Defense: ${player.defense}</div>
         <div>Level: ${player.level}</div>
         <div>Exp: ${player.exp}</div>
-        <div>Dungeon Level: ${window.game.level || 1}</div>
+        <div>Depth: ${window.game.depth || window.game.level || 1}</div>
     `;
 }
 

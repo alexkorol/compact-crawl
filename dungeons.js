@@ -34,18 +34,138 @@ class DungeonGenerator {
         
         const rooms = digger.getRooms();
         console.log("Rooms:", rooms.length);
-        
+
         const startRoom = rooms[0];
-        const startPosition = startRoom.getCenter();
+        const startPosition = this.normalizePoint(startRoom ? startRoom.getCenter() : null) || {
+            x: Math.floor(width / 2),
+            y: Math.floor(height / 2)
+        };
         console.log("Start position:", startPosition);
+
+        const { upstairs, downstairs } = this.selectStairPositions(
+            rooms,
+            map,
+            freeCells,
+            startPosition
+        );
 
         return {
             map,
             freeCells,
             rooms,
             startPosition,
-            corridors: digger.getCorridors()
+            corridors: digger.getCorridors(),
+            upstairsPosition: upstairs,
+            downstairsPosition: downstairs
         };
+    }
+
+    normalizePoint(position) {
+        if (!position) {
+            return null;
+        }
+
+        if (Array.isArray(position)) {
+            return { x: position[0], y: position[1] };
+        }
+
+        return { x: position.x, y: position.y };
+    }
+
+    selectStairPositions(rooms, map, freeCells, startPosition) {
+        const result = { upstairs: null, downstairs: null };
+
+        if (!rooms || rooms.length === 0) {
+            return result;
+        }
+
+        const startPoint = this.normalizePoint(startPosition) || { x: 0, y: 0 };
+        const startKey = `${startPoint.x},${startPoint.y}`;
+
+        const roomEntries = rooms
+            .slice(1)
+            .map(room => {
+                const center = this.normalizePoint(room.getCenter());
+                const distance = Math.hypot(center.x - startPoint.x, center.y - startPoint.y);
+                return { room, center, distance };
+            })
+            .sort((a, b) => b.distance - a.distance);
+
+        const usedRooms = new Set();
+
+        const pickPositionInRoom = (room) => {
+            if (!room) {
+                return null;
+            }
+
+            for (let attempt = 0; attempt < 10; attempt++) {
+                const pos = this.normalizePoint(room.getRandomPosition());
+                const key = `${pos.x},${pos.y}`;
+                if (key === startKey) {
+                    continue;
+                }
+                if (map[key] === '.') {
+                    return { x: pos.x, y: pos.y };
+                }
+            }
+
+            const fallback = this.normalizePoint(room.getCenter());
+            const fallbackKey = `${fallback.x},${fallback.y}`;
+            if (fallbackKey !== startKey && map[fallbackKey] === '.') {
+                return { x: fallback.x, y: fallback.y };
+            }
+
+            return null;
+        };
+
+        if (roomEntries.length > 0) {
+            const entry = roomEntries[0];
+            result.downstairs = pickPositionInRoom(entry.room);
+            usedRooms.add(entry.room);
+        }
+
+        if (roomEntries.length > 1) {
+            const entry = roomEntries.find(candidate => !usedRooms.has(candidate.room));
+            if (entry) {
+                result.upstairs = pickPositionInRoom(entry.room);
+                usedRooms.add(entry.room);
+            }
+        }
+
+        const startDistance = (cell) => Math.hypot(cell.x - startPoint.x, cell.y - startPoint.y);
+        const fallbackCells = freeCells
+            .map(cell => ({ x: cell.x, y: cell.y }))
+            .filter(cell => {
+                const key = `${cell.x},${cell.y}`;
+                return key !== startKey;
+            })
+            .sort((a, b) => startDistance(b) - startDistance(a));
+
+        if (!result.downstairs && fallbackCells.length > 0) {
+            result.downstairs = fallbackCells.shift();
+        }
+
+        if (!result.upstairs && fallbackCells.length > 0) {
+            const downstairsKey = result.downstairs ? `${result.downstairs.x},${result.downstairs.y}` : null;
+            const candidate = fallbackCells.find(cell => `${cell.x},${cell.y}` !== downstairsKey);
+            if (candidate) {
+                result.upstairs = candidate;
+            }
+        }
+
+        if (result.upstairs) {
+            const key = `${result.upstairs.x},${result.upstairs.y}`;
+            map[key] = '<';
+        }
+
+        if (result.downstairs) {
+            const key = `${result.downstairs.x},${result.downstairs.y}`;
+            if (!result.upstairs || key !== `${result.upstairs.x},${result.upstairs.y}`) {
+                map[key] = '>';
+            }
+        }
+
+        return result;
     }
 
     generateAbyss(width, height, seed) {
@@ -93,7 +213,9 @@ class DungeonGenerator {
         const itemCount = getRandomInt(2, 3 + Math.floor(level/2));
         
         // Calculate item probabilities based on level
-        const itemWeights = this.calculateItemWeights(level);
+        const itemWeights = typeof getItemSpawnWeights === 'function'
+            ? getItemSpawnWeights(level)
+            : this.calculateItemWeights(level);
         
         // Place items in random rooms
         for (let i = 0; i < itemCount; i++) {
@@ -123,7 +245,11 @@ class DungeonGenerator {
     }
     
     calculateItemWeights(level) {
-        // As level increases, better items become more common
+        if (typeof getItemSpawnWeights === 'function') {
+            return getItemSpawnWeights(level);
+        }
+
+        // As level increases, better items become more common (fallback)
         return {
             healthPotion: 20,
             strengthPotion: 5 + Math.floor(level/2),
