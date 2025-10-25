@@ -11,12 +11,24 @@ class Entity {
 class Player extends Entity {
     constructor(x, y) {
         super(x, y, '@', '#ff0');
+
+        // Core stats
         this.hp = 10;
         this.maxHp = 10;
+        this.attack = 2;
+        this.defense = 1;
         this.level = 1;
+        this.exp = 0;
+        this.gold = 0;
+
+        // Inventory & visibility
+        this.inventory = [];
         this.visibleTiles = {};  // Track visible tiles
+
         this.fov = new ROT.FOV.PreciseShadowcasting(
             (x, y) => {
+                const game = window.game;
+                if (!game || !game.map) return false;
                 const key = `${x},${y}`;
                 return key in game.map && game.map[key] !== '#';
             }
@@ -24,27 +36,37 @@ class Player extends Entity {
     }
 
     act() {
+        const game = window.game;
         // Compute FOV when it's player's turn
         this.computeFOV();
-        game.engine.lock();
+        if (game && game.engine) {
+            game.engine.lock();
+        }
     }
 
     computeFOV() {
         // Clear current visible tiles
         this.visibleTiles = {};
-        
+
+        const game = window.game;
+        if (!game || !game.map) {
+            return this.visibleTiles;
+        }
+
         console.log("Computing FOV from", this.x, this.y);
-        
+
+        const radius = game.FOV_RADIUS || 8;
+
         // Compute new FOV
-        this.fov.compute(this.x, this.y, 8, (x, y, r, visibility) => {
+        this.fov.compute(this.x, this.y, radius, (x, y) => {
             const key = `${x},${y}`;
             console.log("FOV includes", x, y);
             this.visibleTiles[key] = true;
             game.explored[key] = true;
         });
-        
+
         console.log("Visible tiles after FOV:", Object.keys(this.visibleTiles).length);
-        
+
         return this.visibleTiles;
     }
 
@@ -61,10 +83,15 @@ class Player extends Entity {
         };
 
         if (e.key in keyMap) {
+            const game = window.game;
+            if (!game || !game.map) {
+                return false;
+            }
+
             const [dx, dy] = keyMap[e.key];
             const newX = this.x + dx;
             const newY = this.y + dy;
-            
+
             const key = `${newX},${newY}`;
             if (game.map[key] === '.') {
                 this.x = newX;
