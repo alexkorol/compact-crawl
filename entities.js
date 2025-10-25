@@ -89,13 +89,16 @@ class Player extends Entity {
             }
 
             const [dx, dy] = keyMap[e.key];
-            const newX = this.x + dx;
-            const newY = this.y + dy;
 
-            const key = `${newX},${newY}`;
-            if (game.map[key] === '.') {
-                this.x = newX;
-                this.y = newY;
+            if (typeof game.tryPlayerAction === 'function' && game.tryPlayerAction(dx, dy)) {
+                if (typeof game.endPlayerTurn === 'function') {
+                    game.endPlayerTurn();
+                } else if (game.engine) {
+                    if (game.scheduler) {
+                        game.scheduler.add(this, false);
+                    }
+                    game.engine.unlock();
+                }
                 return true;
             }
         }
@@ -132,11 +135,23 @@ class Monster extends Entity {
         
         console.log(`Created monster: ${this.name} at (${this.x},${this.y})`);
     }
-    
+
     act() {
+        const game = window.game;
+        if (!game || game.gameState !== 'playing') {
+            return;
+        }
+
+        if (this.hp <= 0 || !game.entities.has(this)) {
+            if (game.scheduler) {
+                game.scheduler.remove(this);
+            }
+            return;
+        }
+
         try {
             console.log(`Monster ${this.name} acting at ${this.x},${this.y}`);
-            
+
             // Different behaviors for different monster types
             switch(this.behavior) {
                 case "melee":
@@ -160,6 +175,16 @@ class Monster extends Entity {
             }
         } catch (err) {
             console.error(`Error in monster ${this.name} act():`, err);
+        }
+
+        if (game.gameState === 'playing' && this.hp > 0 && game.entities.has(this)) {
+            if (game.scheduler) {
+                game.scheduler.add(this, false);
+            }
+        }
+
+        if (typeof game.drawGame === 'function') {
+            game.drawGame();
         }
     }
     

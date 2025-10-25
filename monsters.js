@@ -264,7 +264,14 @@ class Shoggoth extends TentacleMonster {
                     // Create and add the new shoggoth
                     const baby = new Monster(newX, newY, babyData);
                     baby.name = "Shoggoth Spawn";
-                    game.entities.add(baby);
+                    if (typeof game.addMonster === 'function') {
+                        game.addMonster(baby);
+                    } else {
+                        game.entities.add(baby);
+                        if (game.scheduler) {
+                            game.scheduler.add(baby, false);
+                        }
+                    }
                     
                     // Reduce parent shoggoth's HP
                     this.monster.hp = Math.floor(this.monster.hp / 2);
