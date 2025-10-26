@@ -9,6 +9,15 @@ class Game {
         this.playerUsedStairs = false;
         this.inventoryOpen = false;
         this.inventoryDropMode = false;
+
+        this.messages = [];
+        this.maxVisibleMessages = 4;
+        this.messageBuffer = new Array(this.maxVisibleMessages).fill(null);
+        this.messageBufferIndex = 0;
+        this.messageBufferCount = 0;
+
+        this.setupAudio();
+        this.rebuildMessageBufferFromHistory(this.messages);
         
         // Initialize display
         this.display = new ROT.Display({
@@ -192,6 +201,7 @@ class Game {
         this.items = [];
         this.explored = {};
         this.messages = [];
+        this.rebuildMessageBufferFromHistory(this.messages);
         this.turns = 0;
         this.depth = 1;
         this.level = 1;
@@ -862,10 +872,10 @@ class Game {
         this.player = currentState.player;
         this.map = currentState.map;
         this.mapBounds = currentState.mapBounds;
-        this.messages = currentState.messages;
+        this.rebuildMessageBufferFromHistory(currentState.messages || []);
         this.gameState = currentState.gameState;
         this.gameMode = currentState.gameMode;
-        
+
         // Redraw everything
         this.player.computeFOV();
         this.drawGame();
@@ -1171,8 +1181,6 @@ class Game {
             const displayHeight = this.display.getOptions().height;
             const colors = CONFIG.colors;
 
-            this.drawUIBackground();
-
             const { minX, maxX, minY, maxY } = this.mapBounds;
             const exploredMap = this.explored || {};
             for (let y = minY; y <= maxY; y++) {
@@ -1214,23 +1222,6 @@ class Game {
 
             this.display.draw(this.player.x, this.player.y, this.player.symbol, colors.entities.player);
 
-            const statsText = `HP: ${this.player.hp}/${this.player.maxHp} | Level: ${this.player.level} | XP: ${this.player.exp} | Gold: ${this.player.gold || 0} | Depth: ${this.depth}`;
-            this.display.drawText(1, 0, `%c{${colors.ui.text}}%b{#000}${statsText.padEnd(displayWidth - 2)}`);
-
-            for (let x = 0; x < displayWidth; x++) {
-                this.display.draw(x, 1, '─', '#555');
-                this.display.draw(x, displayHeight - 4, '─', '#555');
-            }
-
-            if (this.messages && this.messages.length > 0) {
-                for (let i = 0; i < Math.min(3, this.messages.length); i++) {
-                    const msg = this.messages[i];
-                    const text = msg.text.padEnd(displayWidth - 2);
-                    this.display.drawText(1, displayHeight - 3 + i,
-                        `%c{${msg.color || colors.ui.text}}%b{#000}${text}`);
-                }
-            }
-
             if (this.gameMode === 'sandbox' && this.showGrid) {
                 for (let x = minX; x <= maxX; x++) {
                     const isVerticalLine = x % 5 === 0;
@@ -1255,6 +1246,10 @@ class Game {
                 }
             }
 
+            this.drawUIBackground();
+            this.drawHud(displayWidth, displayHeight, colors);
+            this.drawMessageRows(displayWidth, displayHeight, colors);
+
             this.updateExternalUI();
             return true;
         } catch (err) {
@@ -1266,20 +1261,102 @@ class Game {
     drawUIBackground() {
         const displayWidth = this.display.getOptions().width;
         const displayHeight = this.display.getOptions().height;
-        
-        // Top stats bar background (2 rows)
+        const hudRows = 2;
+        const bottomDividerY = displayHeight - this.maxVisibleMessages - 1;
+
         for (let x = 0; x < displayWidth; x++) {
-            for (let y = 0; y < 2; y++) {
+            for (let y = 0; y < hudRows; y++) {
+                this.display.draw(x, y, ' ', '#fff', '#000');
+            }
+
+            for (let y = bottomDividerY + 1; y < displayHeight; y++) {
                 this.display.draw(x, y, ' ', '#fff', '#000');
             }
         }
-        
-        // Bottom message area background (4 rows counting divider)
+
+        const topDividerY = hudRows;
         for (let x = 0; x < displayWidth; x++) {
-            for (let y = displayHeight - 4; y < displayHeight; y++) {
-                this.display.draw(x, y, ' ', '#fff', '#000');
-            }
+            this.display.draw(x, topDividerY, '─', '#444');
+            this.display.draw(x, bottomDividerY, '─', '#444');
         }
+    }
+
+    drawHud(displayWidth, displayHeight, colors) {
+        if (!this.player) {
+            return;
+        }
+
+        const textColor = colors.ui.text;
+        const statsSegments = [
+            `Depth ${this.depth}`,
+            `Lvl ${this.player.level}`,
+            `Atk ${this.player.attack}`,
+            `Def ${this.player.defense}`,
+            `Gold ${this.player.gold || 0}`,
+            `Turn ${this.turns || 0}`
+        ];
+
+        const statsRow = `%c{${textColor}}%b{#000}${statsSegments.join(' | ').padEnd(displayWidth - 2)}`;
+        this.display.drawText(1, 0, statsRow);
+
+        const xpProgress = this.getXpProgress();
+        const hpBar = this.createBar('HP', this.player.hp, this.player.maxHp, 18, '#d66', '#311', textColor);
+        const xpBar = this.createBar('XP', xpProgress.current, xpProgress.max, 16, '#5cf', '#134', textColor);
+        const nextLabel = `%c{${textColor}} Next ${xpProgress.remaining}`;
+
+        const resourceRow = `${hpBar}  ${xpBar}  ${nextLabel}`;
+        this.display.drawText(1, 1, resourceRow);
+    }
+
+    drawMessageRows(displayWidth, displayHeight, colors) {
+        const startY = displayHeight - this.maxVisibleMessages;
+        const messages = this.getOrderedMessageBuffer();
+
+        for (let i = 0; i < messages.length; i++) {
+            const entry = messages[i];
+            if (!entry) continue;
+            const text = entry.text.padEnd(displayWidth - 2);
+            const color = entry.color || colors.ui.text;
+            this.display.drawText(1, startY + i, `%c{${color}}%b{#000}${text}`);
+        }
+    }
+
+    createBar(label, current, max, width, fillColor, emptyColor, textColor) {
+        const safeMax = Math.max(1, Number(max) || 1);
+        const safeCurrent = Math.max(0, Number(current) || 0);
+        const ratio = Math.min(1, safeCurrent / safeMax);
+        const filled = Math.round(ratio * width);
+        const empty = Math.max(0, width - filled);
+        const segments = [`%c{${textColor}}${label} `];
+
+        if (filled > 0) {
+            segments.push(`%c{${fillColor}}${'█'.repeat(filled)}`);
+        }
+
+        if (empty > 0) {
+            segments.push(`%c{${emptyColor}}${'░'.repeat(empty)}`);
+        }
+
+        segments.push(`%c{${textColor}} ${Math.floor(safeCurrent)}/${safeMax}`);
+        return segments.join('');
+    }
+
+    getXpProgress() {
+        if (!this.player) {
+            return { current: 0, max: 1, next: 10, remaining: 10 };
+        }
+
+        const level = Math.max(1, this.player.level || 1);
+        const prevThreshold = (level - 1) * 10;
+        const nextThreshold = level * 10;
+        const current = Math.max(0, (this.player.exp || 0) - prevThreshold);
+        const max = Math.max(1, nextThreshold - prevThreshold);
+        return {
+            current: Math.min(current, max),
+            max,
+            next: nextThreshold,
+            remaining: Math.max(0, nextThreshold - (this.player.exp || 0))
+        };
     }
     
     handleKeyDown(e) {
@@ -1443,6 +1520,7 @@ class Game {
 
         this.inventoryOpen = true;
         this.inventoryDropMode = false;
+        this.playAudioCue('ui');
 
         if (typeof toggleInventoryScreen === 'function') {
             toggleInventoryScreen(true);
@@ -1540,6 +1618,7 @@ class Game {
             const newDepth = this.depth + 1;
             this.prepareLevel(newDepth, 'down', { preservePlayer: true });
             this.addMessage(`You descend to depth ${newDepth}.`, CONFIG.colors.ui.info);
+            this.playAudioCue('ui');
             this.playerUsedStairs = true;
             this.engine.start();
             return true;
@@ -1554,6 +1633,7 @@ class Game {
             const newDepth = this.depth - 1;
             this.prepareLevel(newDepth, 'up', { preservePlayer: true });
             this.addMessage(`You ascend to depth ${newDepth}.`, CONFIG.colors.ui.info);
+            this.playAudioCue('ui');
             this.playerUsedStairs = true;
             this.engine.start();
             return true;
@@ -1583,6 +1663,7 @@ class Game {
 
         // Apply damage
         entity.hp -= damage;
+        this.playAudioCue('hit');
 
         // Add message
         this.addMessage(`You hit the ${entity.name || 'monster'} for ${damage} damage.`);
@@ -1602,6 +1683,7 @@ class Game {
             // Entity attacks back
             const entityDamage = Math.max(1, (entity.attack || 1) - this.player.defense);
             this.player.hp -= entityDamage;
+            this.playAudioCue('hit');
 
             // Add messages
             this.addMessage(`The ${entity.name || 'monster'} hits you for ${entityDamage} damage.`, CONFIG.colors.ui.warning);
@@ -2106,6 +2188,7 @@ class Game {
             ? `${inventoryItem.quantity} ${inventoryItem.name}`
             : `the ${inventoryItem.name}`;
         this.addMessage(`You pick up ${itemName}.`, CONFIG.colors.ui.info);
+        this.playAudioCue('pickup');
 
         if (this.inventoryOpen && typeof updateInventoryDisplay === 'function') {
             updateInventoryDisplay();
@@ -2645,14 +2728,182 @@ class Game {
     }
 
     updateExternalUI() {
-        // Hide the external UI elements as we're using the in-game versions
-        const statsOverlay = document.getElementById('stats-overlay');
-        if (statsOverlay) {
-            statsOverlay.style.display = 'none';
+        this.updateStatsOverlay();
+        this.updateMessageOverlay();
+    }
+
+    updateStatsOverlay() {
+        const overlay = document.getElementById('stats-overlay');
+        if (!overlay) {
+            return;
         }
-        const messageOverlay = document.getElementById('message-overlay');
-        if (messageOverlay) {
-            messageOverlay.style.display = 'none';
+
+        if (!this.player) {
+            overlay.innerHTML = '';
+            overlay.style.display = 'flex';
+            return;
+        }
+
+        const xpProgress = this.getXpProgress();
+        const segments = [
+            `Depth ${this.depth}`,
+            `Level ${this.player.level}`,
+            `HP ${this.player.hp}/${this.player.maxHp}`,
+            `XP ${this.player.exp}/${xpProgress.next}`,
+            `Gold ${this.player.gold || 0}`,
+            `Turns ${this.turns || 0}`
+        ];
+
+        overlay.innerHTML = segments.map(segment => `<span>${segment}</span>`).join('<span class="dot">•</span>');
+        overlay.style.display = 'flex';
+    }
+
+    updateMessageOverlay() {
+        const container = document.getElementById('message-overlay');
+        if (!container) {
+            return;
+        }
+
+        const messages = this.getOrderedMessageBuffer();
+        if (!messages.length) {
+            container.style.display = 'flex';
+            return;
+        }
+
+        container.innerHTML = '';
+        messages.forEach(entry => {
+            const row = document.createElement('div');
+            row.className = `message-row severity-${entry.severity}`;
+            row.textContent = entry.text;
+            if (entry.color) {
+                row.style.color = entry.color;
+            }
+            container.appendChild(row);
+        });
+
+        container.style.display = 'flex';
+        container.scrollTop = container.scrollHeight;
+    }
+
+    getMessageSeverity(color) {
+        if (!color) {
+            return 'default';
+        }
+
+        const normalized = color.toLowerCase();
+        const uiColors = CONFIG.colors.ui || {};
+        if (uiColors.warning && normalized === uiColors.warning.toLowerCase()) {
+            return 'warning';
+        }
+        if (uiColors.highlight && normalized === uiColors.highlight.toLowerCase()) {
+            return 'success';
+        }
+        if (uiColors.info && normalized === uiColors.info.toLowerCase()) {
+            return 'info';
+        }
+        return 'default';
+    }
+
+    normalizeMessageEntry(entry) {
+        if (!entry) {
+            return null;
+        }
+
+        if (typeof entry === 'string') {
+            return {
+                text: entry,
+                color: CONFIG.colors.ui.text,
+                severity: 'default'
+            };
+        }
+
+        const text = entry.text ?? '';
+        const color = entry.color || CONFIG.colors.ui.text;
+        const severity = entry.severity || this.getMessageSeverity(color);
+        return { text, color, severity };
+    }
+
+    pushMessageToBuffer(entry) {
+        if (!entry) {
+            return;
+        }
+
+        if (!Array.isArray(this.messageBuffer)) {
+            this.messageBuffer = new Array(this.maxVisibleMessages).fill(null);
+            this.messageBufferIndex = 0;
+            this.messageBufferCount = 0;
+        }
+
+        this.messageBuffer[this.messageBufferIndex] = entry;
+        this.messageBufferIndex = (this.messageBufferIndex + 1) % this.maxVisibleMessages;
+        if (this.messageBufferCount < this.maxVisibleMessages) {
+            this.messageBufferCount++;
+        }
+    }
+
+    getOrderedMessageBuffer() {
+        const result = [];
+        if (!Array.isArray(this.messageBuffer) || this.messageBufferCount === 0) {
+            return result;
+        }
+
+        const max = this.maxVisibleMessages;
+        let start = (this.messageBufferIndex - this.messageBufferCount + max) % max;
+        for (let i = 0; i < this.messageBufferCount; i++) {
+            const index = (start + i) % max;
+            const entry = this.messageBuffer[index];
+            if (entry) {
+                result.push(entry);
+            }
+        }
+        return result;
+    }
+
+    rebuildMessageBufferFromHistory(history = []) {
+        const normalizedHistory = Array.isArray(history)
+            ? history.filter(Boolean).map(entry => this.normalizeMessageEntry(entry))
+            : [];
+
+        this.messageBuffer = new Array(this.maxVisibleMessages).fill(null);
+        this.messageBufferIndex = 0;
+        this.messageBufferCount = 0;
+        this.messages = normalizedHistory;
+
+        const relevant = normalizedHistory.slice(0, this.maxVisibleMessages).reverse();
+        relevant.forEach(entry => this.pushMessageToBuffer(entry));
+    }
+
+    setupAudio() {
+        this.audioCues = {};
+        if (typeof Audio === 'undefined' || !CONFIG.audio || !CONFIG.audio.cues) {
+            return;
+        }
+
+        const masterVolume = CONFIG.audio.masterVolume ?? 1;
+        Object.entries(CONFIG.audio.cues).forEach(([name, cue]) => {
+            if (!cue || !cue.src) {
+                return;
+            }
+
+            this.audioCues[name] = {
+                src: cue.src,
+                volume: Math.min(1, Math.max(0, (cue.volume ?? 1) * masterVolume))
+            };
+        });
+    }
+
+    playAudioCue(name) {
+        if (!this.audioCues || !this.audioCues[name] || typeof Audio === 'undefined') {
+            return;
+        }
+
+        const cue = this.audioCues[name];
+        try {
+            const audio = new Audio(cue.src);
+            audio.volume = cue.volume;
+            audio.play().catch(() => {});
+        } catch (err) {
+            console.debug('Audio playback skipped:', err);
         }
     }
 
@@ -2815,29 +3066,18 @@ class Game {
     }
 
     // Add more detailed addMessage for debugging
-    addMessage(text, color = "#fff") {
+    addMessage(text, color = CONFIG.colors.ui.text) {
         console.log(`[MESSAGE] ${text}`);
-        
-        // Add to message queue
-        this.messages.unshift({text, color});
-        if (this.messages.length > 50) this.messages.pop();
-        
-        // Update UI if any
-        const msgOverlay = document.getElementById('message-overlay');
-        if (msgOverlay) {
-            const msg = document.createElement('div');
-            msg.style.color = color;
-            msg.textContent = text;
-            msgOverlay.appendChild(msg);
-            
-            if (msgOverlay.children.length > 10) {
-                msgOverlay.removeChild(msgOverlay.firstChild);
-            }
-            
-            msgOverlay.scrollTop = msgOverlay.scrollHeight;
+
+        const entry = this.normalizeMessageEntry({ text, color });
+        this.messages.unshift(entry);
+        if (this.messages.length > 50) {
+            this.messages.pop();
         }
-        
-        // Redraw game to show the new message once the map is ready
+
+        this.pushMessageToBuffer(entry);
+        this.updateMessageOverlay();
+
         const mapReady = this.map && this.mapBounds && Object.keys(this.map).length > 0;
         const fovReady = this.player && this.player.visibleTiles &&
             Object.keys(this.player.visibleTiles).length > 0;
