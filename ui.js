@@ -24,15 +24,22 @@ function updatePlayerStats() {
             ? player.statusEffects.map(effect => effect.type).join(', ')
             : 'None');
 
-    statsElement.innerHTML = `
-        <div>HP: ${player.hp}/${player.maxHp}</div>
-        <div>Attack: ${attack.total} (Base ${attack.base} | Gear ${attack.equipment} | Status ${attack.status})</div>
-        <div>Defense: ${defense.total} (Base ${defense.base} | Gear ${defense.equipment} | Status ${defense.status})</div>
-        <div>Status: ${statusSummary}</div>
-        <div>Level: ${player.level}</div>
-        <div>Exp: ${player.exp}</div>
-        <div>Depth: ${window.game.depth || window.game.level || 1}</div>
+    const formatBreakdown = (label, data) => `
+        <div class="stat-line">
+            <span class="label">${label}</span>
+            <span class="value">${data.total} <span class="breakdown">[B${data.base} G${data.equipment} S${data.status}]</span></span>
+        </div>
     `;
+
+    statsElement.innerHTML = [
+        `<div class="stat-line"><span class="label">HP</span><span class="value">${player.hp}/${player.maxHp}</span></div>`,
+        formatBreakdown('Atk', attack),
+        formatBreakdown('Def', defense),
+        `<div class="stat-line"><span class="label">Status</span><span class="value">${statusSummary}</span></div>`,
+        `<div class="stat-line"><span class="label">Level</span><span class="value">${player.level}</span></div>`,
+        `<div class="stat-line"><span class="label">XP</span><span class="value">${player.exp}</span></div>`,
+        `<div class="stat-line"><span class="label">Depth</span><span class="value">${window.game.depth || window.game.level || 1}</span></div>`
+    ].join('');
 }
 
 function showInventoryScreen() {

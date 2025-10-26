@@ -263,9 +263,6 @@ class Game {
             }
 
             this.updateStats();
-            if (typeof updatePlayerStats === 'function') {
-                updatePlayerStats();
-            }
 
             this.drawGame();
 
@@ -385,9 +382,6 @@ class Game {
         this.player.computeFOV();
         this.drawGame();
         this.updateStats();
-        if (typeof updatePlayerStats === 'function') {
-            updatePlayerStats();
-        }
 
         this.playerUsedStairs = false;
 
@@ -577,9 +571,6 @@ class Game {
         this.player.hp = this.player.maxHp;
 
         this.updateStats();
-        if (typeof updatePlayerStats === 'function') {
-            updatePlayerStats();
-        }
 
         const highScore = this.gameData ? this.gameData.getArenaHighScore(this.saveSlot) : 0;
         this.arenaHighScore = highScore;
@@ -721,9 +712,6 @@ class Game {
         this.player.hp = this.player.maxHp;
 
         this.updateStats();
-        if (typeof updatePlayerStats === 'function') {
-            updatePlayerStats();
-        }
 
         this.initializeSandboxFontOptions();
         this.currentFontIndex = 0;
@@ -901,9 +889,6 @@ class Game {
         this.player.hp = this.player.maxHp;
         this.addMessage("Player fully healed", CONFIG.colors.ui.highlight);
         this.updateStats();
-        if (typeof updatePlayerStats === 'function') {
-            updatePlayerStats();
-        }
         this.drawGame();
     }
 
@@ -916,9 +901,6 @@ class Game {
 
         this.addMessage(`Stats increased: ATK +2, DEF +1, HP +10`, CONFIG.colors.ui.highlight);
         this.updateStats();
-        if (typeof updatePlayerStats === 'function') {
-            updatePlayerStats();
-        }
         this.drawGame();
     }
 
@@ -1089,9 +1071,6 @@ class Game {
         this.depth = difficultyDepth;
         this.level = difficultyDepth;
         this.updateStats();
-        if (typeof updatePlayerStats === 'function') {
-            updatePlayerStats();
-        }
         this.drawGame();
     }
 
@@ -1568,9 +1547,6 @@ class Game {
                 this.attackEntity(entity);
                 this.drawGame(); // Redraw after combat
                 this.updateStats();
-                if (typeof updatePlayerStats === 'function') {
-                    updatePlayerStats();
-                }
                 return true;
             }
         }
@@ -1605,9 +1581,6 @@ class Game {
             this.player.computeFOV();
             this.drawGame();
             this.updateStats();
-            if (typeof updatePlayerStats === 'function') {
-                updatePlayerStats();
-            }
         }
 
         return true;
@@ -1695,9 +1668,6 @@ class Game {
         }
 
         this.updateStats();
-        if (typeof updatePlayerStats === 'function') {
-            updatePlayerStats();
-        }
     }
 
     handleMonsterDeath(monster, options = {}) {
@@ -1733,9 +1703,6 @@ class Game {
         }
 
         this.updateStats();
-        if (typeof updatePlayerStats === 'function') {
-            updatePlayerStats();
-        }
     }
 
     formatStatusName(type) {
@@ -1805,9 +1772,6 @@ class Game {
 
         if (entity === this.player) {
             this.updateStats();
-            if (typeof updatePlayerStats === 'function') {
-                updatePlayerStats();
-            }
         }
     }
 
@@ -2010,9 +1974,6 @@ class Game {
 
         if (entity === this.player) {
             this.updateStats();
-            if (typeof updatePlayerStats === 'function') {
-                updatePlayerStats();
-            }
         }
 
         if (entity.hp <= 0) {
@@ -2068,9 +2029,6 @@ class Game {
 
         this.player.recalculateDerivedStats();
         this.updateStats();
-        if (typeof updatePlayerStats === 'function') {
-            updatePlayerStats();
-        }
     }
 
     extractItemModifiers(item, baseData = {}) {
@@ -2144,9 +2102,6 @@ class Game {
         }
 
         this.updateStats();
-        if (typeof updatePlayerStats === 'function') {
-            updatePlayerStats();
-        }
         
         // Spawn next wave after a short delay
         setTimeout(() => {
@@ -2293,9 +2248,6 @@ class Game {
 
         this.drawGame();
         this.updateStats();
-        if (typeof updatePlayerStats === 'function') {
-            updatePlayerStats();
-        }
 
         this.endPlayerTurn();
     }
@@ -2401,9 +2353,6 @@ class Game {
             this.player.hp += restored;
             this.addMessage(`You drink the ${item.name} and recover ${restored} HP.`, CONFIG.colors.ui.info);
             this.updateStats();
-            if (typeof updatePlayerStats === 'function') {
-                updatePlayerStats();
-            }
             return true;
         }
 
@@ -2439,9 +2388,6 @@ class Game {
         this.player.hp += healed;
         this.addMessage(`You eat the ${item.name} and recover ${healed} HP.`, CONFIG.colors.ui.info);
         this.updateStats();
-        if (typeof updatePlayerStats === 'function') {
-            updatePlayerStats();
-        }
         return true;
     }
 
@@ -2614,9 +2560,6 @@ class Game {
 
         this.player.recalculateDerivedStats();
         this.updateStats();
-        if (typeof updatePlayerStats === 'function') {
-            updatePlayerStats();
-        }
     }
     
     teleportPlayer() {
@@ -2650,9 +2593,6 @@ class Game {
             this.player.hp = this.player.maxHp;
             this.addMessage(`You reached level ${this.player.level}!`, CONFIG.colors.ui.highlight);
             this.updateStats();
-            if (typeof updatePlayerStats === 'function') {
-                updatePlayerStats();
-            }
         }
     }
 
@@ -2695,36 +2635,11 @@ class Game {
     }
 
     updateStats() {
-        const statsElement = document.getElementById('player-stats');
-        if (!statsElement) {
-            return;
+        if (typeof updatePlayerStats === 'function') {
+            updatePlayerStats();
         }
 
-        if (this.player) {
-            const attack = this.player.getStatBreakdown ? this.player.getStatBreakdown('attack') : {
-                base: this.player.attack,
-                equipment: 0,
-                status: 0,
-                total: this.player.attack
-            };
-            const defense = this.player.getStatBreakdown ? this.player.getStatBreakdown('defense') : {
-                base: this.player.defense,
-                equipment: 0,
-                status: 0,
-                total: this.player.defense
-            };
-            const statusSummary = this.getStatusSummary(this.player);
-
-            statsElement.innerHTML = `
-                <div>HP: ${this.player.hp}/${this.player.maxHp}</div>
-                <div>Attack: ${attack.total} (Base ${attack.base} | Gear ${attack.equipment} | Status ${attack.status})</div>
-                <div>Defense: ${defense.total} (Base ${defense.base} | Gear ${defense.equipment} | Status ${defense.status})</div>
-                <div>Status: ${statusSummary}</div>
-                <div>Level: ${this.player.level}</div>
-                <div>Exp: ${this.player.exp}</div>
-                <div>Depth: ${this.depth}</div>
-            `;
-        }
+        this.updateStatsOverlay();
     }
 
     updateExternalUI() {
@@ -2733,29 +2648,37 @@ class Game {
     }
 
     updateStatsOverlay() {
+        const summary = document.getElementById('stats-summary');
         const overlay = document.getElementById('stats-overlay');
-        if (!overlay) {
+        if (!summary) {
             return;
         }
 
         if (!this.player) {
-            overlay.innerHTML = '';
-            overlay.style.display = 'flex';
+            summary.innerHTML = '';
+            if (overlay) {
+                overlay.style.display = 'flex';
+            }
             return;
         }
 
         const xpProgress = this.getXpProgress();
         const segments = [
-            `Depth ${this.depth}`,
-            `Level ${this.player.level}`,
-            `HP ${this.player.hp}/${this.player.maxHp}`,
-            `XP ${this.player.exp}/${xpProgress.next}`,
-            `Gold ${this.player.gold || 0}`,
-            `Turns ${this.turns || 0}`
+            { label: 'Depth', value: this.depth },
+            { label: 'Level', value: this.player.level },
+            { label: 'HP', value: `${this.player.hp}/${this.player.maxHp}` },
+            { label: 'XP', value: `${this.player.exp}/${xpProgress.next}` },
+            { label: 'Gold', value: this.player.gold || 0 },
+            { label: 'Turns', value: this.turns || 0 }
         ];
 
-        overlay.innerHTML = segments.map(segment => `<span>${segment}</span>`).join('<span class="dot">•</span>');
-        overlay.style.display = 'flex';
+        summary.innerHTML = segments
+            .map(segment => `<span class="stat-pill"><span class="label">${segment.label}</span>${segment.value}</span>`)
+            .join('');
+
+        if (overlay) {
+            overlay.style.display = 'flex';
+        }
     }
 
     updateMessageOverlay() {
