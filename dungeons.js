@@ -9,7 +9,7 @@ class DungeonGenerator {
 
     generateStandard(width, height, level) {
         console.log("Generating standard dungeon", width, height, level);
-        
+
         const digger = new ROT.Map.Digger(width, height, {
             roomWidth: [3, 9],
             roomHeight: [3, 7],
@@ -57,6 +57,92 @@ class DungeonGenerator {
             corridors: digger.getCorridors(),
             upstairsPosition: upstairs,
             downstairsPosition: downstairs
+        };
+    }
+
+    generateArena(width, height, wave = 1) {
+        const map = {};
+        const freeCells = [];
+        const spawnPoints = [];
+
+        const maxX = width - 1;
+        const maxY = height - 1;
+        const center = {
+            x: Math.floor(width / 2),
+            y: Math.floor(height / 2)
+        };
+
+        const outerWall = 0;
+        const spawnMargin = Math.max(2, Math.floor(Math.min(width, height) / 6));
+        const featureCount = Math.min(3, Math.floor(wave / 3));
+
+        const featureOffsets = [];
+        for (let i = 0; i < featureCount; i++) {
+            featureOffsets.push(2 + i * 2);
+        }
+
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                let tile = '.';
+
+                const isOuterWall = (
+                    x === outerWall ||
+                    y === outerWall ||
+                    x === maxX ||
+                    y === maxY
+                );
+
+                if (isOuterWall) {
+                    tile = '#';
+                }
+
+                // Add concentric obstacles that grow with the wave count
+                if (tile !== '#') {
+                    for (const offset of featureOffsets) {
+                        const withinVerticalBand = (
+                            (y === outerWall + offset || y === maxY - offset) &&
+                            x > outerWall + offset - 1 &&
+                            x < maxX - offset + 1
+                        );
+                        const withinHorizontalBand = (
+                            (x === outerWall + offset || x === maxX - offset) &&
+                            y > outerWall + offset - 1 &&
+                            y < maxY - offset + 1
+                        );
+
+                        if (withinVerticalBand || withinHorizontalBand) {
+                            tile = '#';
+                            break;
+                        }
+                    }
+                }
+
+                const key = `${x},${y}`;
+                map[key] = tile;
+                if (tile !== '#') {
+                    freeCells.push({ x, y });
+                }
+            }
+        }
+
+        // Build spawn points around the arena edges just inside the wall to avoid overlaps
+        for (let x = spawnMargin; x <= maxX - spawnMargin; x++) {
+            spawnPoints.push({ x, y: spawnMargin });
+            spawnPoints.push({ x, y: maxY - spawnMargin });
+        }
+        for (let y = spawnMargin + 1; y <= maxY - spawnMargin - 1; y++) {
+            spawnPoints.push({ x: spawnMargin, y });
+            spawnPoints.push({ x: maxX - spawnMargin, y });
+        }
+
+        return {
+            map,
+            freeCells,
+            rooms: [],
+            startPosition: center,
+            spawnPoints,
+            upstairsPosition: null,
+            downstairsPosition: null
         };
     }
 
