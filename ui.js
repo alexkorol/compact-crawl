@@ -4,11 +4,31 @@ function updatePlayerStats() {
     
     const player = window.game.player;
     const statsElement = document.getElementById('player-stats');
-    
+    if (!statsElement) return;
+
+    const attack = player.getStatBreakdown ? player.getStatBreakdown('attack') : {
+        base: player.attack,
+        equipment: 0,
+        status: 0,
+        total: player.attack
+    };
+    const defense = player.getStatBreakdown ? player.getStatBreakdown('defense') : {
+        base: player.defense,
+        equipment: 0,
+        status: 0,
+        total: player.defense
+    };
+    const statusSummary = window.game.getStatusSummary
+        ? window.game.getStatusSummary(player)
+        : (player.statusEffects && player.statusEffects.length > 0
+            ? player.statusEffects.map(effect => effect.type).join(', ')
+            : 'None');
+
     statsElement.innerHTML = `
         <div>HP: ${player.hp}/${player.maxHp}</div>
-        <div>Attack: ${player.attack}</div>
-        <div>Defense: ${player.defense}</div>
+        <div>Attack: ${attack.total} (Base ${attack.base} | Gear ${attack.equipment} | Status ${attack.status})</div>
+        <div>Defense: ${defense.total} (Base ${defense.base} | Gear ${defense.equipment} | Status ${defense.status})</div>
+        <div>Status: ${statusSummary}</div>
         <div>Level: ${player.level}</div>
         <div>Exp: ${player.exp}</div>
         <div>Depth: ${window.game.depth || window.game.level || 1}</div>

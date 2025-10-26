@@ -5,6 +5,7 @@ class Entity {
         this.y = y;
         this.symbol = symbol;
         this.color = color;
+        this.statusEffects = [];
     }
 }
 
@@ -13,10 +14,25 @@ class Player extends Entity {
         super(x, y, '@', '#ff0');
 
         // Core stats
-        this.hp = 10;
-        this.maxHp = 10;
-        this.attack = 2;
-        this.defense = 1;
+        this.baseStats = {
+            attack: 2,
+            defense: 1,
+            maxHp: 10
+        };
+        this.equipmentBonuses = {
+            attack: 0,
+            defense: 0,
+            maxHp: 0
+        };
+        this.statusBonuses = {
+            attack: 0,
+            defense: 0,
+            maxHp: 0
+        };
+        this.hp = this.baseStats.maxHp;
+        this.maxHp = this.baseStats.maxHp;
+        this.attack = this.baseStats.attack;
+        this.defense = this.baseStats.defense;
         this.level = 1;
         this.exp = 0;
         this.gold = 0;
@@ -37,10 +53,19 @@ class Player extends Entity {
                 return key in game.map && game.map[key] !== '#';
             }
         );
+
+        this.recalculateDerivedStats();
     }
 
     act() {
         const game = window.game;
+        if (game && typeof game.resolveStatusEffects === 'function') {
+            const alive = game.resolveStatusEffects(this);
+            if (!alive) {
+                return;
+            }
+        }
+
         // Compute FOV when it's player's turn
         this.computeFOV();
         if (game && game.engine) {
@@ -112,6 +137,49 @@ class Player extends Entity {
         }
         return false;
     }
+
+    recalculateDerivedStats() {
+        const base = this.baseStats || {};
+        const equipment = this.equipmentBonuses || {};
+        const status = this.statusBonuses || {};
+
+        const attackTotal = (base.attack || 0) + (equipment.attack || 0) + (status.attack || 0);
+        const defenseTotal = (base.defense || 0) + (equipment.defense || 0) + (status.defense || 0);
+        const maxHpTotal = (base.maxHp || 0) + (equipment.maxHp || 0) + (status.maxHp || 0);
+
+        this.attack = Math.max(1, Math.round(attackTotal));
+        this.defense = Math.max(0, Math.round(defenseTotal));
+        this.maxHp = Math.max(1, Math.round(maxHpTotal));
+
+        if (this.hp == null) {
+            this.hp = this.maxHp;
+        } else {
+            this.hp = Math.min(this.hp, this.maxHp);
+        }
+    }
+
+    getStatBreakdown(stat) {
+        const base = this.baseStats?.[stat] || 0;
+        const equipment = this.equipmentBonuses?.[stat] || 0;
+        const status = this.statusBonuses?.[stat] || 0;
+
+        let total;
+        switch (stat) {
+            case 'attack':
+                total = this.attack;
+                break;
+            case 'defense':
+                total = this.defense;
+                break;
+            case 'maxHp':
+                total = this.maxHp;
+                break;
+            default:
+                total = base + equipment + status;
+        }
+
+        return { base, equipment, status, total };
+    }
 }
 
 // Fix the Monster class to better handle different monster types
@@ -128,8 +196,20 @@ class Monster extends Entity {
         this.defense = data.defense || 0;
         this.exp = data.exp || 1;
         this.behavior = data.behavior || "melee";
+        this.abilities = Array.isArray(data.abilities) ? [...data.abilities] : [];
         this.segments = [];
         this.hasMoved = false;
+
+        this.baseStats = {
+            attack: this.attack,
+            defense: this.defense,
+            maxHp: this.maxHp
+        };
+        this.statusBonuses = {
+            attack: 0,
+            defense: 0,
+            maxHp: 0
+        };
         
         // Initialize segments for special monsters
         if (data.behavior === "serpentine" || 
@@ -142,11 +222,24 @@ class Monster extends Entity {
         }
         
         console.log(`Created monster: ${this.name} at (${this.x},${this.y})`);
+
+        this.recalculateDerivedStats();
     }
 
     act() {
         const game = window.game;
-        if (!game || game.gameState !== 'playing') {
+        if (!game) {
+            return;
+        }
+
+        if (typeof game.resolveStatusEffects === 'function') {
+            const alive = game.resolveStatusEffects(this);
+            if (!alive) {
+                return;
+            }
+        }
+
+        if (game.gameState !== 'playing') {
             return;
         }
 
@@ -159,6 +252,20 @@ class Monster extends Entity {
 
         try {
             console.log(`Monster ${this.name} acting at ${this.x},${this.y}`);
+
+            if (Array.isArray(this.abilities) && this.abilities.includes('rage') && !this.rageApplied) {
+                if (this.hp <= Math.floor(this.maxHp / 2)) {
+                    game.applyStatusEffect(this, {
+                        type: 'rage',
+                        duration: Infinity,
+                        modifiers: { attack: 2 },
+                        source: this.name,
+                        message: `The ${this.name} flies into a rage!`,
+                        messageColor: CONFIG.colors.ui.warning
+                    });
+                    this.rageApplied = true;
+                }
+            }
 
             // Different behaviors for different monster types
             switch(this.behavior) {
@@ -599,13 +706,48 @@ class Monster extends Entity {
         
         // Apply damage
         game.player.hp -= damage;
-        
+
         // Add message
         game.addMessage(`The ${this.name} attacks you for ${damage} damage!`, CONFIG.colors.ui.warning);
-        
+
+        if (Array.isArray(this.abilities) && this.abilities.includes('poison')) {
+            game.applyStatusEffect(game.player, {
+                type: 'poison',
+                duration: 4,
+                potency: 1,
+                source: this.name,
+                message: `The ${this.name}'s venom courses through your veins!`,
+                messageColor: CONFIG.colors.ui.warning
+            });
+        }
+
         // Check if player is dead
         if (game.player.hp <= 0) {
             game.gameOver();
+        }
+    }
+
+    recalculateDerivedStats() {
+        const base = this.baseStats || {};
+        const status = this.statusBonuses || {};
+
+        const attackTotal = (base.attack || 0) + (status.attack || 0);
+        const defenseTotal = (base.defense || 0) + (status.defense || 0);
+        const maxHpTotal = (base.maxHp || 0) + (status.maxHp || 0);
+
+        this.attack = Math.max(1, Math.round(attackTotal));
+        this.defense = Math.max(0, Math.round(defenseTotal));
+
+        const previousMax = this.maxHp || base.maxHp || maxHpTotal;
+        this.maxHp = Math.max(1, Math.round(maxHpTotal));
+
+        if (this.hp == null) {
+            this.hp = this.maxHp;
+        } else if (previousMax > 0 && this.maxHp !== previousMax) {
+            const ratio = Math.max(0, Math.min(1, this.hp / previousMax));
+            this.hp = Math.min(this.maxHp, Math.round(this.maxHp * ratio));
+        } else {
+            this.hp = Math.min(this.hp, this.maxHp);
         }
     }
 
