@@ -23,6 +23,10 @@ class Player extends Entity {
 
         // Inventory & visibility
         this.inventory = [];
+        this.equipment = {
+            hand: null,
+            body: null
+        };
         this.visibleTiles = {};  // Track visible tiles
 
         this.fov = new ROT.FOV.PreciseShadowcasting(
