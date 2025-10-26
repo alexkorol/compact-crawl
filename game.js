@@ -26,6 +26,33 @@ class Game {
         displayContainer.innerHTML = '';
         displayContainer.appendChild(this.display.getContainer());
 
+        // Initialize save system and expose helpers for existing UI buttons
+        this.saveSlot = 'slot1';
+        try {
+            this.gameData = new GameData(this);
+            this.gameData.useSlot(this.saveSlot);
+            if (typeof window !== 'undefined') {
+                window.gameData = this.gameData;
+                window.saveGame = (gameInstance = this) => {
+                    const target = gameInstance instanceof Game ? gameInstance : this;
+                    return target.gameData ? target.gameData.saveGame({ slot: target.saveSlot }) : false;
+                };
+                window.loadGame = (gameInstance = this) => {
+                    const target = gameInstance instanceof Game ? gameInstance : this;
+                    return target.gameData ? target.gameData.loadGame({ slot: target.saveSlot }) : false;
+                };
+                window.deleteSaveGame = (slot = null) => {
+                    const targetSlot = slot || this.saveSlot;
+                    if (this.gameData) {
+                        this.gameData.deleteSaveData(targetSlot);
+                    }
+                };
+            }
+        } catch (err) {
+            console.error('Failed to initialize GameData:', err);
+            this.gameData = null;
+        }
+
         // Start with title screen
         this.gameState = 'title';
         this.showTitleScreen();
@@ -206,19 +233,23 @@ class Game {
                 this.dungeonGenerator = new DungeonGenerator(this);
             }
 
-            this.prepareLevel(this.depth, 'start', { preservePlayer: false });
+            let preparationResult = null;
 
-            // Set up game based on selected mode
             switch(gameMode) {
-                case 'main':
-                    this.addMessage(`Welcome to the main game mode!`, "#ff0");
-                    break;
                 case 'arena':
-                    this.setupArenaMode();
+                    preparationResult = this.setupArenaMode();
                     break;
                 case 'sandbox':
-                    this.setupSandboxMode();
+                    preparationResult = this.setupSandboxMode();
                     break;
+                default:
+                    preparationResult = this.prepareLevel(this.depth, 'start', { preservePlayer: false });
+                    this.addMessage(`Welcome to the main game mode!`, "#ff0");
+                    break;
+            }
+
+            if (!preparationResult) {
+                throw new Error(`Failed to initialize game mode: ${gameMode}`);
             }
 
             this.updateStats();
@@ -260,7 +291,9 @@ class Game {
 
         const mapWidth = this.mapBounds.maxX - this.mapBounds.minX + 1;
         const mapHeight = this.mapBounds.maxY - this.mapBounds.minY + 1;
-        const dungeon = this.dungeonGenerator.generateStandard(mapWidth, mapHeight, depth);
+        const customDungeon = options.customDungeon || null;
+        const dungeon = customDungeon || this.dungeonGenerator.generateStandard(mapWidth, mapHeight, depth);
+        this.currentDungeon = dungeon;
 
         const toGlobal = ({ x, y }) => ({
             x: x + this.mapBounds.minX,
@@ -294,11 +327,15 @@ class Game {
             }
         }
 
-        this.freeCells = dungeon.freeCells.map(cell => toGlobal(cell));
+        const localFreeCells = Array.isArray(dungeon.freeCells) ? dungeon.freeCells : [];
+        this.freeCells = localFreeCells.map(cell => toGlobal(cell));
         this.upstairsPosition = dungeon.upstairsPosition ? toGlobal(dungeon.upstairsPosition) : null;
         this.downstairsPosition = dungeon.downstairsPosition ? toGlobal(dungeon.downstairsPosition) : null;
 
-        const rawItems = this.dungeonGenerator.placeItems(depth, dungeon.map, dungeon.freeCells, dungeon.rooms) || [];
+        let rawItems = [];
+        if (!options.skipItems) {
+            rawItems = this.dungeonGenerator.placeItems(depth, dungeon.map, dungeon.freeCells, dungeon.rooms) || [];
+        }
         this.items = rawItems.map(item => ({
             ...item,
             x: item.x + this.mapBounds.minX,
@@ -326,9 +363,11 @@ class Game {
         this.scheduler = new ROT.Scheduler.Simple();
         this.scheduler.add(this.player, false);
 
-        const monsters = this.createMonstersForDungeon(dungeon, depth, toGlobal, spawnLocal);
-        for (const monster of monsters) {
-            this.addMonster(monster);
+        if (!options.skipMonsters) {
+            const monsters = this.createMonstersForDungeon(dungeon, depth, toGlobal, spawnLocal);
+            for (const monster of monsters) {
+                this.addMonster(monster);
+            }
         }
 
         this.engine = new ROT.Engine(this.scheduler);
@@ -495,21 +534,32 @@ class Game {
 
     // Add new methods for special game modes
     setupArenaMode() {
-        // Add arena-specific setup
         this.arenaWave = 1;
         this.arenaScore = 0;
-        
-        // Clear any existing monsters
-        for (const entity of Array.from(this.entities)) {
-            if (entity !== this.player) {
-                if (this.scheduler) {
-                    this.scheduler.remove(entity);
-                }
-                this.entities.delete(entity);
-            }
+
+        const mapWidth = this.mapBounds.maxX - this.mapBounds.minX + 1;
+        const mapHeight = this.mapBounds.maxY - this.mapBounds.minY + 1;
+        const arenaDungeon = this.dungeonGenerator.generateArena(mapWidth, mapHeight, this.arenaWave);
+
+        const preparation = this.prepareLevel(Math.max(1, this.arenaWave), 'start', {
+            preservePlayer: false,
+            customDungeon: arenaDungeon,
+            skipMonsters: true,
+            skipItems: true
+        });
+
+        if (!preparation) {
+            return false;
         }
-        
-        // Enhance player for arena mode
+
+        this.arenaSpawnPoints = Array.isArray(arenaDungeon.spawnPoints)
+            ? arenaDungeon.spawnPoints.map(point => ({
+                x: point.x + this.mapBounds.minX,
+                y: point.y + this.mapBounds.minY
+            }))
+            : [];
+        this.arenaSpawnCells = this.calculateArenaSpawnCells();
+
         this.player.baseStats.maxHp = 20;
         this.player.baseStats.attack = 4;
         this.player.baseStats.defense = 2;
@@ -520,207 +570,232 @@ class Game {
         if (typeof updatePlayerStats === 'function') {
             updatePlayerStats();
         }
-        
-        // Spawn first wave of monsters
-        this.spawnArenaWave();
-        
-        // Add arena welcome message
+
+        const highScore = this.gameData ? this.gameData.getArenaHighScore(this.saveSlot) : 0;
+        this.arenaHighScore = highScore;
+
         this.addMessage(`Arena Mode: Survive as many waves as you can!`, "#ff0");
+        if (highScore > 0) {
+            this.addMessage(`Best score for this slot: ${highScore}`, CONFIG.colors.ui.info);
+        }
         this.addMessage(`Wave ${this.arenaWave} begins...`, "#f55");
+
+        this.spawnArenaWave();
+        return preparation;
     }
 
-    // Fix sandbox mode font detection error
+    calculateArenaSpawnCells(minDistance = 6) {
+        if (!Array.isArray(this.freeCells)) {
+            return [];
+        }
 
-// Update the setupSandboxMode method to properly access font detection functions
-setupSandboxMode() {
-    // Sandbox mode with enhanced player and testing features
-    this.player.baseStats.maxHp = 100;
-    this.player.baseStats.attack = 10;
-    this.player.baseStats.defense = 5;
-    this.player.recalculateDerivedStats();
-    this.player.hp = this.player.maxHp;
+        const playerPos = this.player ? { x: this.player.x, y: this.player.y } : { x: 0, y: 0 };
+        const filtered = this.freeCells.filter(cell => {
+            const distance = Math.abs(cell.x - playerPos.x) + Math.abs(cell.y - playerPos.y);
+            return distance >= minDistance;
+        });
 
-    this.updateStats();
-    if (typeof updatePlayerStats === 'function') {
-        updatePlayerStats();
+        if (filtered.length > 0) {
+            return filtered;
+        }
+
+        return this.freeCells.filter(cell => cell.x !== playerPos.x || cell.y !== playerPos.y);
     }
-    
-    // Get available fonts using the global function
-    try {
-        // Check if the font detection function is available globally
-        if (typeof window.detectSystemFonts === 'function') {
-            // Use the global function
-            this.availableFonts = window.detectSystemFonts();
-        } else if (typeof window.isFontAvailable === 'function') {
-            // Fallback to filtering with isFontAvailable if available
-            const defaultFonts = [
-                "monospace", 
-                "Courier New", 
-                "Consolas", 
-                "DejaVu Sans Mono",
-                "Lucida Console", 
-                "Monaco",
-                "Fira Code",
-                "Source Code Pro",
-                "Roboto Mono",
-                "Ubuntu Mono",
-                "Inconsolata"
-            ];
-            
-            this.availableFonts = defaultFonts.filter(font => 
-                window.isFontAvailable(font)
-            );
-            
-            // Add special system-specific fonts
-            if (navigator.userAgent.indexOf("Windows") !== -1) {
-                ["Cascadia Code", "Fixedsys", "Terminal"].forEach(font => {
-                    if (window.isFontAvailable(font)) this.availableFonts.push(font);
-                });
-            } else if (navigator.userAgent.indexOf("Mac") !== -1) {
-                ["Menlo", "SF Mono", "Andale Mono"].forEach(font => {
-                    if (window.isFontAvailable(font)) this.availableFonts.push(font);
-                });
-            } else {
-                ["Liberation Mono", "Noto Mono", "FreeMono"].forEach(font => {
-                    if (window.isFontAvailable(font)) this.availableFonts.push(font);
-                });
+
+    pickArenaSpawnPosition(occupied = new Set()) {
+        let spawn = this.randomArenaPositionFrom(this.arenaSpawnPoints, occupied);
+        if (!spawn) {
+            spawn = this.randomArenaPositionFrom(this.arenaSpawnCells, occupied);
+        }
+        if (!spawn) {
+            spawn = this.findFallbackArenaSpawn(occupied);
+        }
+        return spawn;
+    }
+
+    randomArenaPositionFrom(list, occupied) {
+        if (!Array.isArray(list) || list.length === 0) {
+            return null;
+        }
+
+        for (let attempt = 0; attempt < 20; attempt++) {
+            const candidate = ROT.RNG.getItem(list);
+            if (!candidate) {
+                continue;
             }
-        } else {
-            // Fallback to basic fonts if no font detection is available
-            console.warn("Font detection functions not available - using basic fonts");
-            this.availableFonts = [
-                "monospace", 
-                "Courier New", 
-                "Consolas", 
-                "DejaVu Sans Mono",
-                "Lucida Console"
-            ];
+            const key = `${candidate.x},${candidate.y}`;
+            if (occupied.has(key)) {
+                continue;
+            }
+            if (!this.isWalkableTile(candidate.x, candidate.y)) {
+                continue;
+            }
+            occupied.add(key);
+            return { x: candidate.x, y: candidate.y };
         }
-    } catch (err) {
-        console.error("Error detecting fonts:", err);
-        // Fallback to just monospace
-        this.availableFonts = ["monospace"];
-    }
-    
-    console.log("Available fonts:", this.availableFonts);
-    
-    this.currentFontIndex = 0;
-    
-    // Font sizes to test
-    this.availableFontSizes = [12, 14, 16, 18, 20, 22, 24];
-    this.currentFontSizeIndex = 2; // Start with 16px
-    
-    // Initialize sandbox control panel
-    this.showSandboxControls();
-    
-    // Spawn various monster types for testing
-    this.spawnTestMonsterPack();
-    
-    // Add sandbox welcome message
-    this.addMessage(`Sandbox Mode: Test game mechanics freely.`, "#ff0");
-    this.addMessage(`Press [F1] to show sandbox controls`, "#5cf");
-    this.addMessage(`You have enhanced stats for testing.`, "#5cf");
-}
 
-    showSandboxControls() {
-        // Create sandbox control panel if it doesn't exist
-        let sandboxPanel = document.getElementById('sandbox-panel');
-        
-        if (!sandboxPanel) {
-            sandboxPanel = document.createElement('div');
-            sandboxPanel.id = 'sandbox-panel';
-            sandboxPanel.style.cssText = 'position: fixed; top: 10px; left: 10px; background: rgba(0,0,0,0.8); border: 1px solid #555; padding: 10px; z-index: 1000; color: #fff; font-family: monospace;';
-            
-            document.body.appendChild(sandboxPanel);
+        return null;
+    }
+
+    findFallbackArenaSpawn(occupied) {
+        if (!Array.isArray(this.freeCells)) {
+            return null;
         }
-        
-        // Create font preview section
-        let fontPreviewDiv = document.getElementById('font-preview');
-        if (!fontPreviewDiv) {
-            fontPreviewDiv = document.createElement('div');
-            fontPreviewDiv.id = 'font-preview';
-            fontPreviewDiv.style.cssText = 'position: fixed; bottom: 10px; left: 10px; width: 300px; background: rgba(0,0,0,0.8); border: 1px solid #555; padding: 10px; z-index: 1000; color: #fff; display: none;';
-            document.body.appendChild(fontPreviewDiv);
+
+        for (const cell of this.freeCells) {
+            const key = `${cell.x},${cell.y}`;
+            if (occupied.has(key)) {
+                continue;
+            }
+            if (!this.isWalkableTile(cell.x, cell.y)) {
+                continue;
+            }
+            occupied.add(key);
+            return { x: cell.x, y: cell.y };
         }
-        
-        sandboxPanel.innerHTML = `
-            <h3>Sandbox Controls</h3>
-            <div>
-                <h4>Font Options</h4>
-                <div>
-                    <label>Font Family:</label>
-                    <select id="font-family-select">
-                        ${this.availableFonts.map((font, index) => 
-                            `<option value="${index}" ${index === this.currentFontIndex ? 'selected' : ''}>${font}</option>`
-                        ).join('')}
-                    </select>
-                    <button onclick="window.game.changeFont()">Apply Font</button>
-                    <button onclick="window.game.toggleFontPreview()">Show Preview</button>
-                </div>
-                <div style="margin-top: 10px;">
-                    <label>Font Size:</label>
-                    <select id="font-size-select">
-                        ${this.availableFontSizes.map((size, index) => 
-                            `<option value="${index}" ${index === this.currentFontSizeIndex ? 'selected' : ''}>${size}px</option>`
-                        ).join('')}
-                    </select>
-                    <button onclick="window.game.changeFontSize()">Apply Size</button>
-                </div>
-                <div id="current-font-info" style="margin-top: 5px; font-size: 12px;">
-                    Current: ${this.availableFonts[this.currentFontIndex]} ${this.availableFontSizes[this.currentFontSizeIndex]}px
-                </div>
-            </div>
-            <div style="margin-top: 15px;">
-                <h4>Monster & Environment</h4>
-                <button onclick="window.game.spawnTestMonsterPack()">Spawn Monsters</button>
-                <button onclick="window.game.clearMonsters()">Clear Monsters</button>
-                <button onclick="window.game.generateNewMap()">Generate New Map</button>
-            </div>
-            <div style="margin-top: 15px;">
-                <h4>Player Options</h4>
-                <button onclick="window.game.healPlayer()">Heal Player</button>
-                <button onclick="window.game.increasePlayerStats()">Buff Stats</button>
-                <button onclick="window.game.teleportPlayer()">Random Teleport</button>
-            </div>
-            <div style="margin-top: 15px;">
-                <h4>Display Options</h4>
-                <div>
-                    <label>
-                        <input type="checkbox" id="show-fov" checked onchange="window.game.toggleFOV(this.checked)">
-                        Show FOV
-                    </label>
-                </div>
-                <div>
-                    <label>
-                        <input type="checkbox" id="show-grid" onchange="window.game.toggleGrid(this.checked)">
-                        Show Grid
-                    </label>
-                </div>
-            </div>
-            <div style="margin-top: 10px;">
-                <button onclick="document.getElementById('sandbox-panel').style.display='none'">Hide Panel</button>
-                <small style="display: block; margin-top: 5px;">Press F1 to show panel again</small>
-            </div>
-        `;
-        
-        // Set up event listeners for the panel's selects
-        document.getElementById('font-family-select').addEventListener('change', (e) => {
-            this.currentFontIndex = parseInt(e.target.value);
-            document.getElementById('current-font-info').textContent = 
-                `Current: ${this.availableFonts[this.currentFontIndex]} ${this.availableFontSizes[this.currentFontSizeIndex]}px`;
+
+        return null;
+    }
+
+    isWalkableTile(x, y) {
+        const key = `${x},${y}`;
+        const tile = this.map ? this.map[key] : null;
+        if (!tile) {
+            return false;
+        }
+        if (tile === this.WALL_TILE) {
+            return false;
+        }
+        return true;
+    }
+
+    calculateArenaMonsterScale(monsterData, depth) {
+        const level = monsterData.level || 1;
+        const waveFactor = 1 + (this.arenaWave - 1) * 0.15;
+        const depthFactor = 1 + Math.max(0, depth - level) * 0.05;
+        return waveFactor * depthFactor;
+    }
+
+    scaleArenaMonster(monsterData, scale) {
+        const baseMaxHp = monsterData.maxHp || monsterData.hp || 1;
+        const baseAttack = monsterData.attack || 1;
+        const baseDefense = monsterData.defense || 0;
+
+        const scaledMaxHp = Math.max(1, Math.round(baseMaxHp * scale));
+        const scaledAttack = Math.max(1, Math.round(baseAttack * (0.7 + 0.3 * scale)));
+        const scaledDefense = Math.max(0, Math.round(baseDefense * (0.5 + 0.5 * scale)));
+
+        return {
+            ...monsterData,
+            hp: scaledMaxHp,
+            maxHp: scaledMaxHp,
+            attack: scaledAttack,
+            defense: scaledDefense
+        };
+    }
+
+    setupSandboxMode() {
+        const preparation = this.prepareLevel(1, 'start', {
+            preservePlayer: false,
+            skipMonsters: true
         });
-        
-        document.getElementById('font-size-select').addEventListener('change', (e) => {
-            this.currentFontSizeIndex = parseInt(e.target.value);
-            document.getElementById('current-font-info').textContent = 
-                `Current: ${this.availableFonts[this.currentFontIndex]} ${this.availableFontSizes[this.currentFontSizeIndex]}px`;
-        });
+
+        if (!preparation) {
+            return false;
+        }
+
+        this.player.baseStats.maxHp = 100;
+        this.player.baseStats.attack = 10;
+        this.player.baseStats.defense = 5;
+        this.player.recalculateDerivedStats();
+        this.player.hp = this.player.maxHp;
+
+        this.updateStats();
+        if (typeof updatePlayerStats === 'function') {
+            updatePlayerStats();
+        }
+
+        this.initializeSandboxFontOptions();
+        this.currentFontIndex = 0;
+        this.availableFontSizes = [12, 14, 16, 18, 20, 22, 24];
+        this.currentFontSizeIndex = 2;
+
+        if (typeof initializeSandboxControls === 'function') {
+            initializeSandboxControls(this);
+            if (typeof toggleSandboxControls === 'function') {
+                toggleSandboxControls(this, false);
+            }
+        }
+
+        this.spawnTestMonsterPack();
+
+        this.addMessage(`Sandbox Mode: Test game mechanics freely.`, "#ff0");
+        this.addMessage(`Press [F1] to show sandbox controls`, "#5cf");
+        this.addMessage(`You have enhanced stats for testing.`, "#5cf");
+
+        return preparation;
+    }
+
+    initializeSandboxFontOptions() {
+        try {
+            if (typeof window.detectSystemFonts === 'function') {
+                this.availableFonts = window.detectSystemFonts();
+            } else if (typeof window.isFontAvailable === 'function') {
+                const defaultFonts = [
+                    "monospace",
+                    "Courier New",
+                    "Consolas",
+                    "DejaVu Sans Mono",
+                    "Lucida Console",
+                    "Monaco",
+                    "Fira Code",
+                    "Source Code Pro",
+                    "Roboto Mono",
+                    "Ubuntu Mono",
+                    "Inconsolata"
+                ];
+
+                this.availableFonts = defaultFonts.filter(font => window.isFontAvailable(font));
+
+                if (navigator.userAgent.indexOf("Windows") !== -1) {
+                    ["Cascadia Code", "Fixedsys", "Terminal"].forEach(font => {
+                        if (window.isFontAvailable(font)) this.availableFonts.push(font);
+                    });
+                } else if (navigator.userAgent.indexOf("Mac") !== -1) {
+                    ["Menlo", "SF Mono", "Andale Mono"].forEach(font => {
+                        if (window.isFontAvailable(font)) this.availableFonts.push(font);
+                    });
+                } else {
+                    ["Liberation Mono", "Noto Mono", "FreeMono"].forEach(font => {
+                        if (window.isFontAvailable(font)) this.availableFonts.push(font);
+                    });
+                }
+            } else {
+                console.warn("Font detection functions not available - using basic fonts");
+                this.availableFonts = [
+                    "monospace",
+                    "Courier New",
+                    "Consolas",
+                    "DejaVu Sans Mono",
+                    "Lucida Console"
+                ];
+            }
+        } catch (err) {
+            console.error("Error detecting fonts:", err);
+            this.availableFonts = ["monospace"];
+        }
+
+        if (!Array.isArray(this.availableFonts) || this.availableFonts.length === 0) {
+            this.availableFonts = ["monospace"];
+        }
+
+        console.log("Available fonts:", this.availableFonts);
     }
 
     changeFont() {
         const newFont = this.availableFonts[this.currentFontIndex];
         console.log(`Changing font to: ${newFont}`);
-        
+
         // Create a new display with the same options but different font
         const oldOptions = this.display.getOptions();
         const newOptions = {...oldOptions, fontFamily: newFont};
@@ -949,59 +1024,65 @@ setupSandboxMode() {
     }
 
     spawnArenaWave() {
-        const monsterCount = Math.min(5 + this.arenaWave, 15); // Cap at 15 monsters
-        
-        // Calculate monster positions around the arena
-        for (let i = 0; i < monsterCount; i++) {
-            // Select monster type based on arena wave
-            let monsterType;
-            if (this.arenaWave <= 2) {
-                monsterType = 'rat'; // Early waves
-            } else if (this.arenaWave <= 5) {
-                monsterType = ROT.RNG.getItem(['rat', 'snake', 'goblin']);
-            } else {
-                monsterType = ROT.RNG.getItem(['goblin', 'orc', 'troll']);
-            }
-            
-            // Get monster data
-            const monsterData = MONSTERS[monsterType];
-            
-            // Calculate position (along edges of arena)
-            let x, y;
-            const margin = 3;
-            const side = Math.floor(Math.random() * 4); // 0-3 for top, right, bottom, left
-            
-            switch(side) {
-                case 0: // Top
-                    x = Math.floor(Math.random() * (this.mapBounds.maxX - 2 * margin)) + margin;
-                    y = this.mapBounds.minY + margin;
-                    break;
-                case 1: // Right
-                    x = this.mapBounds.maxX - margin;
-                    y = Math.floor(Math.random() * (this.mapBounds.maxY - 2 * margin)) + margin;
-                    break;
-                case 2: // Bottom
-                    x = Math.floor(Math.random() * (this.mapBounds.maxX - 2 * margin)) + margin;
-                    y = this.mapBounds.maxY - margin;
-                    break;
-                case 3: // Left
-                    x = margin;
-                    y = Math.floor(Math.random() * (this.mapBounds.maxY - 2 * margin)) + margin;
-                    break;
-            }
-            
-            // Scale monster stats based on wave
-            const scaleFactor = 1 + (this.arenaWave - 1) * 0.2; // +20% per wave
-            const monster = new Monster(x, y, {
-                ...monsterData,
-                hp: Math.round(monsterData.hp * scaleFactor),
-                maxHp: Math.round(monsterData.maxHp * scaleFactor),
-                attack: Math.round(monsterData.attack * scaleFactor)
-            });
-            
-            console.log(`Spawning arena monster: ${monster.name} at ${x},${y}`);
-            this.addMonster(monster);
+        if (!this.arenaSpawnCells || this.arenaSpawnCells.length === 0) {
+            this.arenaSpawnCells = this.calculateArenaSpawnCells();
         }
+
+        const baseDepth = Math.max(1, this.arenaWave);
+        const depthBonus = Math.floor((this.arenaWave - 1) / 2);
+        const difficultyDepth = Math.min(baseDepth + depthBonus, baseDepth + 10);
+        const weightEntries = this.getMonsterWeightEntries(difficultyDepth);
+
+        if (!weightEntries || weightEntries.length === 0) {
+            this.addMessage('No monsters available for this wave!', CONFIG.colors.ui.warning);
+            return;
+        }
+
+        const monsterCount = Math.min(4 + Math.ceil(this.arenaWave * 1.5), 20);
+        const occupied = new Set();
+        for (const entity of this.entities) {
+            occupied.add(`${entity.x},${entity.y}`);
+        }
+
+        let spawned = 0;
+        for (let i = 0; i < monsterCount; i++) {
+            const type = this.pickMonsterTypeForDepth(difficultyDepth, weightEntries);
+            if (!type) {
+                break;
+            }
+
+            const monsterData = MONSTERS[type];
+            if (!monsterData) {
+                continue;
+            }
+
+            const spawnPosition = this.pickArenaSpawnPosition(occupied);
+            if (!spawnPosition) {
+                console.warn('Unable to find spawn position for arena monster');
+                break;
+            }
+
+            const scaleFactor = this.calculateArenaMonsterScale(monsterData, difficultyDepth);
+            const scaledData = this.scaleArenaMonster(monsterData, scaleFactor);
+            const monster = new Monster(spawnPosition.x, spawnPosition.y, scaledData);
+            monster.type = monster.type || type;
+
+            console.log(`Spawning arena monster: ${monster.name} at ${spawnPosition.x},${spawnPosition.y}`);
+            this.addMonster(monster);
+            spawned++;
+        }
+
+        if (spawned === 0) {
+            this.addMessage('Wave failed to spawn any monsters.', CONFIG.colors.ui.warning);
+        }
+
+        this.depth = difficultyDepth;
+        this.level = difficultyDepth;
+        this.updateStats();
+        if (typeof updatePlayerStats === 'function') {
+            updatePlayerStats();
+        }
+        this.drawGame();
     }
 
     spawnTestMonsterPack() {
@@ -1258,12 +1339,8 @@ setupSandboxMode() {
             // F1 to toggle sandbox control panel
             if (e.key === 'F1') {
                 e.preventDefault(); // Prevent browser default F1 behavior
-                
-                const panel = document.getElementById('sandbox-panel');
-                if (panel) {
-                    panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
-                } else {
-                    this.showSandboxControls();
+                if (typeof toggleSandboxControls === 'function') {
+                    toggleSandboxControls(this);
                 }
                 return;
             }
@@ -1950,14 +2027,26 @@ setupSandboxMode() {
     completeArenaWave() {
         // Increment arena score
         this.arenaScore += this.arenaWave * 10;
-        
+
         // Show wave completion message
         this.addMessage(`Wave ${this.arenaWave} completed!`, CONFIG.colors.ui.highlight);
         this.addMessage(`Score: ${this.arenaScore}`, CONFIG.colors.ui.highlight);
-        
+
+        const previousBest = this.arenaHighScore || (this.gameData ? this.gameData.getArenaHighScore(this.saveSlot) : 0);
+        let newBest = previousBest;
+        if (this.gameData) {
+            newBest = this.gameData.recordArenaScore(this.arenaScore, this.saveSlot);
+        }
+        if (newBest > previousBest) {
+            this.arenaHighScore = newBest;
+            this.addMessage(`New arena high score: ${newBest}`, CONFIG.colors.ui.info);
+        } else if (previousBest > 0) {
+            this.arenaHighScore = previousBest;
+        }
+
         // Increase wave counter
         this.arenaWave++;
-        
+
         // Give player rewards
         const recovery = 5;
         this.player.hp = Math.min(this.player.hp + recovery, this.player.maxHp);
@@ -2621,6 +2710,17 @@ setupSandboxMode() {
         if (this.gameMode === 'arena') {
             this.addMessage(`Game over! You reached wave ${this.arenaWave}.`, CONFIG.colors.ui.warning);
             this.addMessage(`Final score: ${this.arenaScore}`, CONFIG.colors.ui.highlight);
+            const previousBest = this.arenaHighScore || (this.gameData ? this.gameData.getArenaHighScore(this.saveSlot) : 0);
+            let newBest = previousBest;
+            if (this.gameData) {
+                newBest = this.gameData.recordArenaScore(this.arenaScore, this.saveSlot);
+            }
+            if (newBest > previousBest) {
+                this.arenaHighScore = newBest;
+                this.addMessage(`New arena high score: ${newBest}`, CONFIG.colors.ui.info);
+            } else if (previousBest > 0 && this.arenaScore < previousBest) {
+                this.addMessage(`Best score for this slot: ${previousBest}`, CONFIG.colors.ui.info);
+            }
         } else {
             this.addMessage("You died!", CONFIG.colors.ui.warning);
             this.addMessage("Game over...", CONFIG.colors.ui.warning);

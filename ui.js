@@ -128,4 +128,205 @@ function updateMessageLog(message, color = CONFIG.colors.ui.text) {
     log.scrollTop = log.scrollHeight;
 }
 
+const SANDBOX_ACTIONS = {
+    'apply-font': (game) => game.changeFont(),
+    'toggle-font-preview': (game) => game.toggleFontPreview(),
+    'apply-font-size': (game) => game.changeFontSize(),
+    'spawn-monsters': (game) => game.spawnTestMonsterPack(),
+    'clear-monsters': (game) => game.clearMonsters(),
+    'generate-map': (game) => game.generateNewMap(),
+    'heal-player': (game) => game.healPlayer(),
+    'buff-player': (game) => game.increasePlayerStats(),
+    'teleport-player': (game) => {
+        if (typeof game.teleportPlayer === 'function') {
+            game.teleportPlayer();
+        }
+    },
+    'toggle-fov': (game, value) => game.toggleFOV(value),
+    'toggle-grid': (game, value) => game.toggleGrid(value),
+    'hide-panel': (game) => toggleSandboxControls(game, false)
+};
+
+function initializeSandboxControls(game) {
+    if (!game) {
+        return;
+    }
+
+    let panel = document.getElementById('sandbox-panel');
+    if (!panel) {
+        panel = document.createElement('div');
+        panel.id = 'sandbox-panel';
+        panel.style.cssText = 'position: fixed; top: 10px; left: 10px; background: rgba(0,0,0,0.85); border: 1px solid #555; padding: 12px; z-index: 1000; color: #fff; font-family: monospace; width: 320px; max-width: 90vw;';
+        document.body.appendChild(panel);
+    }
+
+    let fontPreview = document.getElementById('font-preview');
+    if (!fontPreview) {
+        fontPreview = document.createElement('div');
+        fontPreview.id = 'font-preview';
+        fontPreview.style.cssText = 'position: fixed; bottom: 10px; left: 10px; width: 320px; background: rgba(0,0,0,0.85); border: 1px solid #555; padding: 10px; z-index: 1000; color: #fff; display: none; font-family: monospace;';
+        document.body.appendChild(fontPreview);
+    }
+
+    const fontOptions = Array.isArray(game.availableFonts) ? game.availableFonts : ['monospace'];
+    const sizeOptions = Array.isArray(game.availableFontSizes) ? game.availableFontSizes : [12, 14, 16, 18];
+    const fontIndex = Number.isInteger(game.currentFontIndex) ? game.currentFontIndex : 0;
+    const sizeIndex = Number.isInteger(game.currentFontSizeIndex) ? game.currentFontSizeIndex : 0;
+
+    panel.innerHTML = `
+        <h3>Sandbox Controls</h3>
+        <div class="sandbox-section">
+            <h4>Font Options</h4>
+            <div class="sandbox-row">
+                <label for="font-family-select">Font Family:</label>
+                <select id="font-family-select">
+                    ${fontOptions.map((font, index) => `<option value="${index}" ${index === fontIndex ? 'selected' : ''}>${font}</option>`).join('')}
+                </select>
+            </div>
+            <div class="sandbox-buttons">
+                <button type="button" data-action="apply-font">Apply Font</button>
+                <button type="button" data-action="toggle-font-preview">Toggle Preview</button>
+            </div>
+            <div class="sandbox-row" style="margin-top: 10px;">
+                <label for="font-size-select">Font Size:</label>
+                <select id="font-size-select">
+                    ${sizeOptions.map((size, index) => `<option value="${index}" ${index === sizeIndex ? 'selected' : ''}>${size}px</option>`).join('')}
+                </select>
+                <button type="button" data-action="apply-font-size" style="margin-left: 8px;">Apply Size</button>
+            </div>
+            <div id="current-font-info" class="sandbox-hint"></div>
+        </div>
+        <div class="sandbox-section" style="margin-top: 12px;">
+            <h4>Monster & Environment</h4>
+            <div class="sandbox-buttons">
+                <button type="button" data-action="spawn-monsters">Spawn Monsters</button>
+                <button type="button" data-action="clear-monsters">Clear Monsters</button>
+                <button type="button" data-action="generate-map">Generate Map</button>
+            </div>
+        </div>
+        <div class="sandbox-section" style="margin-top: 12px;">
+            <h4>Player Options</h4>
+            <div class="sandbox-buttons">
+                <button type="button" data-action="heal-player">Heal Player</button>
+                <button type="button" data-action="buff-player">Buff Stats</button>
+                <button type="button" data-action="teleport-player">Random Teleport</button>
+            </div>
+        </div>
+        <div class="sandbox-section" style="margin-top: 12px;">
+            <h4>Display Options</h4>
+            <label class="sandbox-toggle">
+                <input type="checkbox" id="sandbox-show-fov" data-action="toggle-fov" ${game.showFOV === false ? '' : 'checked'}>
+                Show FOV
+            </label>
+            <label class="sandbox-toggle">
+                <input type="checkbox" id="sandbox-show-grid" data-action="toggle-grid" ${game.showGrid ? 'checked' : ''}>
+                Show Grid
+            </label>
+        </div>
+        <div class="sandbox-section sandbox-footer" style="margin-top: 12px; display: flex; justify-content: space-between; align-items: center;">
+            <button type="button" data-action="hide-panel">Hide Panel</button>
+            <small>Press F1 to show panel again</small>
+        </div>
+    `;
+
+    bindSandboxControlHandlers(panel, game);
+    updateSandboxFontInfo(game);
+    panel.style.display = 'block';
+}
+
+function bindSandboxControlHandlers(panel, game) {
+    const fontSelect = panel.querySelector('#font-family-select');
+    if (fontSelect) {
+        fontSelect.addEventListener('change', (event) => {
+            const nextIndex = parseInt(event.target.value, 10);
+            if (!Number.isNaN(nextIndex)) {
+                game.currentFontIndex = nextIndex;
+                updateSandboxFontInfo(game);
+            }
+        });
+    }
+
+    const sizeSelect = panel.querySelector('#font-size-select');
+    if (sizeSelect) {
+        sizeSelect.addEventListener('change', (event) => {
+            const nextIndex = parseInt(event.target.value, 10);
+            if (!Number.isNaN(nextIndex)) {
+                game.currentFontSizeIndex = nextIndex;
+                updateSandboxFontInfo(game);
+            }
+        });
+    }
+
+    panel.querySelectorAll('button[data-action]').forEach(button => {
+        button.addEventListener('click', () => {
+            const action = button.getAttribute('data-action');
+            handleSandboxAction(game, action);
+            if (action === 'spawn-monsters' || action === 'clear-monsters' || action === 'generate-map') {
+                game.drawGame();
+            }
+        });
+    });
+
+    panel.querySelectorAll('input[type="checkbox"][data-action]').forEach(input => {
+        input.addEventListener('change', () => {
+            const action = input.getAttribute('data-action');
+            handleSandboxAction(game, action, input.checked);
+        });
+    });
+}
+
+function handleSandboxAction(game, action, value = null) {
+    if (!game || !action) {
+        return;
+    }
+
+    const handler = SANDBOX_ACTIONS[action];
+    if (typeof handler === 'function') {
+        handler(game, value);
+    }
+}
+
+function updateSandboxFontInfo(game) {
+    const info = document.getElementById('current-font-info');
+    if (!info || !game) {
+        return;
+    }
+
+    const font = Array.isArray(game.availableFonts)
+        ? game.availableFonts[game.currentFontIndex] || game.availableFonts[0]
+        : 'monospace';
+    const size = Array.isArray(game.availableFontSizes)
+        ? game.availableFontSizes[game.currentFontSizeIndex] || game.availableFontSizes[0]
+        : 16;
+
+    info.textContent = `Current: ${font} ${size}px`;
+}
+
+function toggleSandboxControls(game, forceState = null) {
+    let panel = document.getElementById('sandbox-panel');
+    if (!panel) {
+        if (!game) {
+            return;
+        }
+        initializeSandboxControls(game);
+        panel = document.getElementById('sandbox-panel');
+    }
+
+    if (!panel) {
+        return;
+    }
+
+    let show;
+    if (typeof forceState === 'boolean') {
+        show = forceState;
+    } else {
+        show = panel.style.display === 'none';
+    }
+
+    panel.style.display = show ? 'block' : 'none';
+    if (show && game) {
+        updateSandboxFontInfo(game);
+    }
+}
+
 // We'll add more UI functions here later
