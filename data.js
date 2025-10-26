@@ -20,6 +20,15 @@ class GameData {
                     level: this.game.player.level,
                     exp: this.game.player.exp,
                     gold: this.game.player.gold || 0,
+                    baseStats: { ...(this.game.player.baseStats || {}) },
+                    statusEffects: (this.game.player.statusEffects || []).map(effect => ({
+                        type: effect.type,
+                        duration: effect.duration === Infinity ? null : effect.duration,
+                        potency: effect.potency ?? 0,
+                        modifiers: { ...(effect.appliedModifiers || effect.modifiers || {}) },
+                        stackable: effect.stackable ?? false,
+                        source: effect.source || null
+                    })),
                     inventory: (this.game.player.inventory || []).map(item => ({
                         id: item.id,
                         quantity: item.quantity || 1,
@@ -77,15 +86,45 @@ class GameData {
             
             this.game.startGame(saveData.gameMode);
 
-            Object.assign(this.game.player, saveData.player);
+            const savedPlayer = saveData.player;
+            const baseStats = savedPlayer.baseStats
+                ? { ...savedPlayer.baseStats }
+                : { ...(this.game.player.baseStats || {}) };
+
+            this.game.player.baseStats = baseStats;
+            this.game.player.equipmentBonuses = { attack: 0, defense: 0, maxHp: 0 };
+            this.game.player.statusBonuses = { attack: 0, defense: 0, maxHp: 0 };
+            this.game.player.statusEffects = [];
+
+            Object.assign(this.game.player, savedPlayer);
+            this.game.player.baseStats = baseStats;
 
             if (typeof this.game.rebuildInventoryFromSave === 'function') {
-                const inventoryData = Array.isArray(saveData.player.inventory)
-                    ? saveData.player.inventory
+                const inventoryData = Array.isArray(savedPlayer.inventory)
+                    ? savedPlayer.inventory
                     : [];
-                const equipmentData = saveData.player.equipment || {};
+                const equipmentData = savedPlayer.equipment || {};
                 this.game.rebuildInventoryFromSave(inventoryData, equipmentData);
             }
+
+            this.game.player.statusEffects = [];
+            this.game.player.statusBonuses = { attack: 0, defense: 0, maxHp: 0 };
+            if (Array.isArray(savedPlayer.statusEffects)) {
+                savedPlayer.statusEffects.forEach(effectData => {
+                    const payload = {
+                        type: effectData.type,
+                        duration: effectData.duration === null ? Infinity : effectData.duration,
+                        potency: effectData.potency ?? 0,
+                        modifiers: { ...(effectData.modifiers || {}) },
+                        stackable: effectData.stackable ?? false,
+                        source: effectData.source || null,
+                        silent: true
+                    };
+                    this.game.applyStatusEffect(this.game.player, payload);
+                });
+            }
+
+            this.game.player.hp = Math.max(0, Math.min(savedPlayer.hp, this.game.player.maxHp));
 
             const depth = saveData.depth || saveData.level || 1;
             this.game.depth = depth;

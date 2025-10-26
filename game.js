@@ -510,10 +510,16 @@ class Game {
         }
         
         // Enhance player for arena mode
-        this.player.hp = 20;
-        this.player.maxHp = 20;
-        this.player.attack = 4;
-        this.player.defense = 2;
+        this.player.baseStats.maxHp = 20;
+        this.player.baseStats.attack = 4;
+        this.player.baseStats.defense = 2;
+        this.player.recalculateDerivedStats();
+        this.player.hp = this.player.maxHp;
+
+        this.updateStats();
+        if (typeof updatePlayerStats === 'function') {
+            updatePlayerStats();
+        }
         
         // Spawn first wave of monsters
         this.spawnArenaWave();
@@ -528,10 +534,16 @@ class Game {
 // Update the setupSandboxMode method to properly access font detection functions
 setupSandboxMode() {
     // Sandbox mode with enhanced player and testing features
-    this.player.hp = 100;
-    this.player.maxHp = 100;
-    this.player.attack = 10;
-    this.player.defense = 5;
+    this.player.baseStats.maxHp = 100;
+    this.player.baseStats.attack = 10;
+    this.player.baseStats.defense = 5;
+    this.player.recalculateDerivedStats();
+    this.player.hp = this.player.maxHp;
+
+    this.updateStats();
+    if (typeof updatePlayerStats === 'function') {
+        updatePlayerStats();
+    }
     
     // Get available fonts using the global function
     try {
@@ -803,16 +815,25 @@ setupSandboxMode() {
     healPlayer() {
         this.player.hp = this.player.maxHp;
         this.addMessage("Player fully healed", CONFIG.colors.ui.highlight);
+        this.updateStats();
+        if (typeof updatePlayerStats === 'function') {
+            updatePlayerStats();
+        }
         this.drawGame();
     }
 
     increasePlayerStats() {
-        this.player.attack += 2;
-        this.player.defense += 1;
-        this.player.maxHp += 10;
+        this.player.baseStats.attack += 2;
+        this.player.baseStats.defense += 1;
+        this.player.baseStats.maxHp += 10;
+        this.player.recalculateDerivedStats();
         this.player.hp = this.player.maxHp;
-        
+
         this.addMessage(`Stats increased: ATK +2, DEF +1, HP +10`, CONFIG.colors.ui.highlight);
+        this.updateStats();
+        if (typeof updatePlayerStats === 'function') {
+            updatePlayerStats();
+        }
         this.drawGame();
     }
 
@@ -912,6 +933,18 @@ setupSandboxMode() {
         this.entities.add(monster);
         if (this.scheduler) {
             this.scheduler.add(monster, false);
+        }
+
+        if (monster && Array.isArray(monster.abilities)) {
+            if (monster.abilities.includes('regeneration')) {
+                this.applyStatusEffect(monster, {
+                    type: 'regeneration',
+                    duration: Infinity,
+                    potency: 1,
+                    source: monster.name,
+                    silent: true
+                });
+            }
         }
     }
 
@@ -1463,51 +1496,449 @@ setupSandboxMode() {
     }
 
     attackEntity(entity) {
+        if (!entity) {
+            return;
+        }
+
         // Calculate damage
         const damage = Math.max(1, this.player.attack - (entity.defense || 0));
-        
         console.log(`Player attacks ${entity.name} for ${damage} damage`);
-        
+
         // Apply damage
         entity.hp -= damage;
-        
+
         // Add message
         this.addMessage(`You hit the ${entity.name || 'monster'} for ${damage} damage.`);
-        
-        // Check if entity is dead
+
         if (entity.hp <= 0) {
-            this.addMessage(`You killed the ${entity.name || 'monster'}!`, CONFIG.colors.ui.highlight);
-
-            // Remove entity
-            if (this.scheduler) {
-                this.scheduler.remove(entity);
-            }
-            this.entities.delete(entity);
-
-            // Gain experience and gold
-            this.player.exp += entity.exp || 1;
-            this.player.gold = (this.player.gold || 0) + Math.floor(Math.random() * (entity.exp || 1)) + 1;
-            
-            // Check for level up
-            this.checkLevelUp();
-            
-            // In arena mode, check if all monsters are dead
-            if (this.gameMode === 'arena' && this.entitiesCount() === 1) {
-                this.completeArenaWave();
-            }
+            this.handleMonsterDeath(entity, {
+                message: `You killed the ${entity.name || 'monster'}!`
+            });
         } else {
+            const weapon = this.player.equipment && this.player.equipment.hand;
+            if (weapon && weapon.onHitStatus) {
+                const statusPayload = this.cloneStatusTemplate(weapon.onHitStatus) || {};
+                statusPayload.source = weapon.name || 'your weapon';
+                this.applyStatusEffect(entity, statusPayload);
+            }
+
             // Entity attacks back
             const entityDamage = Math.max(1, (entity.attack || 1) - this.player.defense);
             this.player.hp -= entityDamage;
-            
+
             // Add messages
             this.addMessage(`The ${entity.name || 'monster'} hits you for ${entityDamage} damage.`, CONFIG.colors.ui.warning);
-            
+
             // Check if player is dead
             if (this.player.hp <= 0) {
                 this.gameOver();
             }
         }
+
+        this.updateStats();
+        if (typeof updatePlayerStats === 'function') {
+            updatePlayerStats();
+        }
+    }
+
+    handleMonsterDeath(monster, options = {}) {
+        if (!monster || !this.entities.has(monster)) {
+            return;
+        }
+
+        const name = monster.name || 'monster';
+        const {
+            message = `The ${name} dies.`,
+            silent = false,
+            grantRewards = true
+        } = options;
+
+        if (!silent) {
+            this.addMessage(message, CONFIG.colors.ui.highlight);
+        }
+
+        if (this.scheduler) {
+            this.scheduler.remove(monster);
+        }
+        this.entities.delete(monster);
+
+        if (grantRewards && this.player) {
+            const exp = monster.exp || 1;
+            this.player.exp += exp;
+            this.player.gold = (this.player.gold || 0) + Math.floor(Math.random() * exp) + 1;
+            this.checkLevelUp();
+        }
+
+        if (this.gameMode === 'arena' && this.entitiesCount() === 1) {
+            this.completeArenaWave();
+        }
+
+        this.updateStats();
+        if (typeof updatePlayerStats === 'function') {
+            updatePlayerStats();
+        }
+    }
+
+    formatStatusName(type) {
+        if (!type) {
+            return 'Status';
+        }
+        return type
+            .toString()
+            .replace(/[_-]+/g, ' ')
+            .replace(/\b\w/g, char => char.toUpperCase());
+    }
+
+    announceStatusMessage(target, text, color = CONFIG.colors.ui.info) {
+        if (!text) {
+            return;
+        }
+
+        if (target === this.player) {
+            this.addMessage(text, color);
+            return;
+        }
+
+        if (this.isEntityVisible(target)) {
+            this.addMessage(text, color);
+        }
+    }
+
+    cloneStatusTemplate(template) {
+        if (!template) {
+            return null;
+        }
+
+        const cloned = {
+            type: template.type,
+            duration: template.duration,
+            potency: template.potency,
+            stackable: template.stackable,
+            modifiers: template.modifiers ? { ...template.modifiers } : undefined,
+            message: template.message,
+            expireMessage: template.expireMessage,
+            tickMessage: template.tickMessage,
+            messageColor: template.messageColor,
+            expireMessageColor: template.expireMessageColor,
+            silent: template.silent,
+            source: template.source
+        };
+
+        return cloned;
+    }
+
+    applyStatusModifiers(entity, modifiers = {}, direction = 1) {
+        if (!entity || !modifiers) {
+            return;
+        }
+
+        entity.statusBonuses = entity.statusBonuses || {};
+        for (const [stat, value] of Object.entries(modifiers)) {
+            if (!Number.isFinite(value)) {
+                continue;
+            }
+            entity.statusBonuses[stat] = (entity.statusBonuses[stat] || 0) + value * direction;
+        }
+
+        if (typeof entity.recalculateDerivedStats === 'function') {
+            entity.recalculateDerivedStats();
+        }
+
+        if (entity === this.player) {
+            this.updateStats();
+            if (typeof updatePlayerStats === 'function') {
+                updatePlayerStats();
+            }
+        }
+    }
+
+    applyStatusEffect(target, effectData = {}) {
+        if (!target) {
+            return null;
+        }
+
+        const base = this.cloneStatusTemplate(effectData) || {};
+        base.type = base.type || effectData.type;
+        if (!base.type) {
+            return null;
+        }
+
+        const stackable = base.stackable ?? effectData.stackable ?? false;
+        base.stackable = stackable;
+
+        let duration = base.duration;
+        if (duration === undefined || duration === null) {
+            duration = effectData.duration !== undefined ? effectData.duration : 1;
+        }
+        if (duration === 'permanent') {
+            duration = Infinity;
+        }
+        if (duration !== Infinity) {
+            duration = Math.max(1, Math.round(duration));
+        }
+        base.duration = duration;
+
+        base.potency = base.potency ?? effectData.potency ?? 0;
+        const modifierSource = effectData.modifiers || {};
+        base.modifiers = base.modifiers || {};
+        for (const [key, value] of Object.entries(modifierSource)) {
+            base.modifiers[key] = value;
+        }
+        base.message = base.message ?? effectData.message;
+        base.expireMessage = base.expireMessage ?? effectData.expireMessage;
+        base.tickMessage = base.tickMessage ?? effectData.tickMessage;
+        base.messageColor = base.messageColor ?? effectData.messageColor;
+        base.expireMessageColor = base.expireMessageColor ?? effectData.expireMessageColor;
+        base.silent = base.silent ?? effectData.silent ?? false;
+        base.source = base.source || effectData.source || null;
+
+        target.statusEffects = target.statusEffects || [];
+        const existing = !stackable
+            ? target.statusEffects.find(effect => effect.type === base.type)
+            : null;
+
+        if (existing) {
+            if (base.modifiers && Object.keys(base.modifiers).length) {
+                const oldModifiers = existing.appliedModifiers || existing.modifiers || {};
+                const changed = Object.keys(base.modifiers).some(key => base.modifiers[key] !== oldModifiers[key]);
+                if (changed) {
+                    this.applyStatusModifiers(target, oldModifiers, -1);
+                    existing.modifiers = { ...base.modifiers };
+                    existing.appliedModifiers = { ...base.modifiers };
+                    this.applyStatusModifiers(target, existing.appliedModifiers, 1);
+                }
+            }
+
+            if (duration === Infinity) {
+                existing.duration = Infinity;
+            } else if (existing.duration !== Infinity) {
+                existing.duration = Math.max(existing.duration || 0, duration);
+            }
+
+            existing.potency = Math.max(existing.potency || 0, base.potency || 0);
+            existing.source = base.source || existing.source;
+
+            if (!base.silent && base.message) {
+                this.announceStatusMessage(target, base.message, CONFIG.colors.ui.warning);
+            }
+
+            return existing;
+        }
+
+        const appliedEffect = {
+            type: base.type,
+            duration,
+            potency: base.potency,
+            modifiers: base.modifiers ? { ...base.modifiers } : {},
+            appliedModifiers: base.modifiers ? { ...base.modifiers } : {},
+            stackable,
+            source: base.source,
+            message: base.message,
+            expireMessage: base.expireMessage,
+            tickMessage: base.tickMessage,
+            messageColor: base.messageColor,
+            expireMessageColor: base.expireMessageColor,
+            silent: base.silent
+        };
+
+        target.statusEffects.push(appliedEffect);
+
+        if (appliedEffect.appliedModifiers && Object.keys(appliedEffect.appliedModifiers).length) {
+            this.applyStatusModifiers(target, appliedEffect.appliedModifiers, 1);
+        }
+
+        if (!appliedEffect.silent) {
+            const defaultName = this.formatStatusName(appliedEffect.type);
+            const message = appliedEffect.message ||
+                (target === this.player
+                    ? `You are affected by ${defaultName}.`
+                    : `The ${target.name || 'monster'} is afflicted with ${defaultName}.`);
+            const color = appliedEffect.messageColor
+                || (target === this.player ? CONFIG.colors.ui.warning : CONFIG.colors.ui.info);
+            this.announceStatusMessage(target, message, color);
+        }
+
+        return appliedEffect;
+    }
+
+    removeStatusEffect(entity, effect, options = {}) {
+        if (!entity || !effect || !entity.statusEffects) {
+            return;
+        }
+
+        const index = entity.statusEffects.indexOf(effect);
+        if (index === -1) {
+            return;
+        }
+
+        entity.statusEffects.splice(index, 1);
+
+        const modifiers = effect.appliedModifiers || effect.modifiers;
+        if (modifiers && Object.keys(modifiers).length) {
+            this.applyStatusModifiers(entity, modifiers, -1);
+        }
+
+        const silent = options.silent ?? effect.silent;
+        const expireMessage = options.expireMessage || effect.expireMessage;
+        if (!silent && expireMessage) {
+            const color = effect.expireMessageColor || CONFIG.colors.ui.info;
+            this.announceStatusMessage(entity, expireMessage, color);
+        } else if (!silent && entity === this.player && !expireMessage) {
+            const statusName = this.formatStatusName(effect.type);
+            this.addMessage(`The effects of ${statusName} fade.`, CONFIG.colors.ui.info);
+        }
+    }
+
+    resolveStatusEffects(entity) {
+        if (!entity || !entity.statusEffects || entity.statusEffects.length === 0) {
+            return !entity || entity.hp > 0;
+        }
+
+        const activeEffects = [...entity.statusEffects];
+        let fatalEffect = null;
+
+        for (const effect of activeEffects) {
+            if (!entity.statusEffects.includes(effect)) {
+                continue;
+            }
+
+            switch (effect.type) {
+                case 'poison': {
+                    const damage = Math.max(1, effect.potency || 1);
+                    entity.hp -= damage;
+                    const message = entity === this.player
+                        ? `You suffer ${damage} poison damage.`
+                        : `The ${entity.name || 'monster'} suffers ${damage} poison damage.`;
+                    this.announceStatusMessage(entity, message, CONFIG.colors.ui.warning);
+                    break;
+                }
+                case 'regeneration': {
+                    const heal = Math.max(1, effect.potency || 1);
+                    const previous = entity.hp;
+                    entity.hp = Math.min(entity.maxHp, entity.hp + heal);
+                    if (entity.hp > previous) {
+                        const message = entity === this.player
+                            ? `You regenerate ${entity.hp - previous} health.`
+                            : `The ${entity.name || 'monster'} knits its wounds.`;
+                        this.announceStatusMessage(entity, message, CONFIG.colors.ui.info);
+                    }
+                    break;
+                }
+                default: {
+                    if (effect.tickMessage) {
+                        this.announceStatusMessage(entity, effect.tickMessage, CONFIG.colors.ui.info);
+                    }
+                    break;
+                }
+            }
+
+            if (effect.duration !== Infinity) {
+                effect.duration = Math.max(0, effect.duration - 1);
+            }
+
+            if (effect.duration === 0) {
+                this.removeStatusEffect(entity, effect);
+            }
+
+            if (entity.hp <= 0 && !fatalEffect) {
+                fatalEffect = effect;
+            }
+
+            if (entity.hp <= 0) {
+                break;
+            }
+        }
+
+        if (entity === this.player) {
+            this.updateStats();
+            if (typeof updatePlayerStats === 'function') {
+                updatePlayerStats();
+            }
+        }
+
+        if (entity.hp <= 0) {
+            const cause = fatalEffect ? this.formatStatusName(fatalEffect.type) : 'its wounds';
+            if (entity === this.player) {
+                this.addMessage(`You succumb to ${cause}.`, CONFIG.colors.ui.warning);
+                this.gameOver();
+            } else {
+                const deathMessage = `The ${entity.name || 'monster'} succumbs to ${cause}.`;
+                this.handleMonsterDeath(entity, { message: deathMessage });
+            }
+            return false;
+        }
+
+        return true;
+    }
+
+    getStatusSummary(entity, maxEntries = 3) {
+        if (!entity || !entity.statusEffects || entity.statusEffects.length === 0) {
+            return 'None';
+        }
+
+        const segments = entity.statusEffects.slice(0, maxEntries).map(effect => {
+            const name = this.formatStatusName(effect.type);
+            if (effect.duration === Infinity) {
+                return `${name}(∞)`;
+            }
+            if (effect.duration === undefined || effect.duration === null) {
+                return name;
+            }
+            return `${name}(${effect.duration})`;
+        });
+
+        if (entity.statusEffects.length > maxEntries) {
+            segments.push('…');
+        }
+
+        return segments.join(', ');
+    }
+
+    applyEquipmentModifiers(modifiers = {}, direction = 1) {
+        if (!this.player || !modifiers) {
+            return;
+        }
+
+        this.player.equipmentBonuses = this.player.equipmentBonuses || {};
+        for (const [stat, value] of Object.entries(modifiers)) {
+            if (!Number.isFinite(value)) {
+                continue;
+            }
+            this.player.equipmentBonuses[stat] = (this.player.equipmentBonuses[stat] || 0) + value * direction;
+        }
+
+        this.player.recalculateDerivedStats();
+        this.updateStats();
+        if (typeof updatePlayerStats === 'function') {
+            updatePlayerStats();
+        }
+    }
+
+    extractItemModifiers(item, baseData = {}) {
+        if (!item && !baseData) {
+            return {};
+        }
+
+        const modifiers = { ...((baseData && baseData.modifiers) || {}) };
+        const itemModifiers = item && item.modifiers ? item.modifiers : {};
+        for (const [key, value] of Object.entries(itemModifiers)) {
+            modifiers[key] = value;
+        }
+
+        if (item && item.attack != null && modifiers.attack == null) {
+            modifiers.attack = item.attack;
+        }
+        if (item && item.defense != null && modifiers.defense == null) {
+            modifiers.defense = item.defense;
+        }
+        if (item && item.maxHp != null && modifiers.maxHp == null) {
+            modifiers.maxHp = item.maxHp;
+        }
+        if (item && item.maxHpBonus != null && modifiers.maxHp == null) {
+            modifiers.maxHp = item.maxHpBonus;
+        }
+
+        return modifiers;
     }
 
     // Helper function to count remaining entities
@@ -1528,15 +1959,22 @@ setupSandboxMode() {
         this.arenaWave++;
         
         // Give player rewards
-        this.player.hp = Math.min(this.player.hp + 5, this.player.maxHp);
+        const recovery = 5;
+        this.player.hp = Math.min(this.player.hp + recovery, this.player.maxHp);
         this.addMessage(`You recover 5 HP between waves.`, CONFIG.colors.ui.info);
-        
+
         // Every 3 waves, upgrade player stats
         if (this.arenaWave % 3 === 0) {
-            this.player.maxHp += 5;
-            this.player.hp += 5;
-            this.player.attack += 1;
+            this.player.baseStats.maxHp += 5;
+            this.player.baseStats.attack += 1;
+            this.player.recalculateDerivedStats();
+            this.player.hp = this.player.maxHp;
             this.addMessage(`Your powers grow! Max HP +5, Attack +1`, CONFIG.colors.ui.highlight);
+        }
+
+        this.updateStats();
+        if (typeof updatePlayerStats === 'function') {
+            updatePlayerStats();
         }
         
         // Spawn next wave after a short delay
@@ -1606,6 +2044,12 @@ setupSandboxMode() {
 
         const dataSource = baseData ? { ...baseData } : {};
 
+        const modifiers = this.extractItemModifiers(item, dataSource);
+        const onHitStatus = item.onHitStatus
+            ? this.cloneStatusTemplate(item.onHitStatus)
+            : this.cloneStatusTemplate(dataSource.onHitStatus);
+        const duration = item.duration ?? dataSource.duration ?? null;
+
         return {
             id,
             name: item.name || dataSource.name || 'Unknown Item',
@@ -1620,7 +2064,10 @@ setupSandboxMode() {
             stackable: item.stackable ?? dataSource.stackable ?? false,
             nutrition: item.nutrition ?? dataSource.nutrition ?? 0,
             quantity: item.quantity != null ? item.quantity : 1,
-            equipped: false
+            equipped: false,
+            duration,
+            modifiers,
+            onHitStatus
         };
     }
 
@@ -1781,13 +2228,25 @@ setupSandboxMode() {
             const restored = Math.min(healAmount, missing);
             this.player.hp += restored;
             this.addMessage(`You drink the ${item.name} and recover ${restored} HP.`, CONFIG.colors.ui.info);
+            this.updateStats();
+            if (typeof updatePlayerStats === 'function') {
+                updatePlayerStats();
+            }
             return true;
         }
 
         if (effect === 'strength') {
             const bonus = item.power || 1;
-            this.player.attack += bonus;
-            this.addMessage(`You feel a surge of strength! Attack +${bonus}.`, CONFIG.colors.ui.highlight);
+            const duration = item.duration || 10;
+            this.applyStatusEffect(this.player, {
+                type: 'strength',
+                duration,
+                modifiers: { attack: bonus },
+                source: item.name,
+                message: `You feel a surge of strength! Attack +${bonus}.`,
+                messageColor: CONFIG.colors.ui.highlight,
+                expireMessage: 'Your surge of strength fades.'
+            });
             return true;
         }
 
@@ -1807,6 +2266,10 @@ setupSandboxMode() {
         const healed = Math.min(restore, missing);
         this.player.hp += healed;
         this.addMessage(`You eat the ${item.name} and recover ${healed} HP.`, CONFIG.colors.ui.info);
+        this.updateStats();
+        if (typeof updatePlayerStats === 'function') {
+            updatePlayerStats();
+        }
         return true;
     }
 
@@ -1865,12 +2328,10 @@ setupSandboxMode() {
         this.player.equipment[slot] = item;
         item.equipped = true;
 
-        if (item.attack) {
-            this.player.attack += item.attack;
-        }
-
-        if (item.defense) {
-            this.player.defense += item.defense;
+        const modifiers = item.modifiers ? { ...item.modifiers } : this.extractItemModifiers(item);
+        item.appliedModifiers = modifiers;
+        if (modifiers && Object.keys(modifiers).length) {
+            this.applyEquipmentModifiers(modifiers, 1);
         }
 
         if (!options.silent) {
@@ -1893,13 +2354,12 @@ setupSandboxMode() {
 
         this.player.equipment[slot] = null;
 
-        if (item.attack) {
-            this.player.attack = Math.max(1, this.player.attack - item.attack);
+        const modifiers = item.appliedModifiers || (item.modifiers ? { ...item.modifiers } : this.extractItemModifiers(item));
+        if (modifiers && Object.keys(modifiers).length) {
+            this.applyEquipmentModifiers(modifiers, -1);
         }
 
-        if (item.defense) {
-            this.player.defense = Math.max(0, this.player.defense - item.defense);
-        }
+        delete item.appliedModifiers;
 
         item.equipped = false;
 
@@ -1957,7 +2417,10 @@ setupSandboxMode() {
                     slot: base.slot,
                     stackable: base.stackable,
                     nutrition: base.nutrition,
-                    quantity: entry.quantity || 1
+                    quantity: entry.quantity || 1,
+                    modifiers: base.modifiers,
+                    onHitStatus: base.onHitStatus,
+                    duration: base.duration
                 };
 
                 const inventoryItem = this.createInventoryItem(itemData);
@@ -1972,10 +2435,15 @@ setupSandboxMode() {
                 if (!slot || !itemId) return;
                 const found = this.player.inventory.find(inv => inv.id === itemId);
                 if (found) {
-                    this.player.equipment[slot] = found;
-                    found.equipped = true;
+                    this.equipItem(found, { silent: true });
                 }
             });
+        }
+
+        this.player.recalculateDerivedStats();
+        this.updateStats();
+        if (typeof updatePlayerStats === 'function') {
+            updatePlayerStats();
         }
     }
     
@@ -2004,10 +2472,15 @@ setupSandboxMode() {
         
         if (this.player.exp >= nextLevel) {
             this.player.level++;
-            this.player.maxHp += 2;
+            this.player.baseStats.maxHp += 2;
+            this.player.baseStats.attack += 1;
+            this.player.recalculateDerivedStats();
             this.player.hp = this.player.maxHp;
-            this.player.attack += 1;
             this.addMessage(`You reached level ${this.player.level}!`, CONFIG.colors.ui.highlight);
+            this.updateStats();
+            if (typeof updatePlayerStats === 'function') {
+                updatePlayerStats();
+            }
         }
     }
 
@@ -2027,18 +2500,54 @@ setupSandboxMode() {
 
     drawStats() {
         // Draw player stats at top
-        let statsText = `HP: ${this.player.hp}/${this.player.maxHp} | Atk: ${this.player.attack} | Def: ${this.player.defense}`;
+        const attack = this.player.getStatBreakdown ? this.player.getStatBreakdown('attack') : {
+            base: this.player.attack,
+            equipment: 0,
+            status: 0,
+            total: this.player.attack
+        };
+        const defense = this.player.getStatBreakdown ? this.player.getStatBreakdown('defense') : {
+            base: this.player.defense,
+            equipment: 0,
+            status: 0,
+            total: this.player.defense
+        };
+        const statusSummary = this.getStatusSummary(this.player, 2);
+
+        let statsText = `HP: ${this.player.hp}/${this.player.maxHp}`;
+        statsText += ` | Atk: ${attack.total} (B${attack.base}/G${attack.equipment}/S${attack.status})`;
+        statsText += ` | Def: ${defense.total} (B${defense.base}/G${defense.equipment}/S${defense.status})`;
+        statsText += ` | Status: ${statusSummary}`;
         statsText += ` | Lvl: ${this.player.level} | XP: ${this.player.exp} | Gold: ${this.player.gold || 0} | Depth: ${this.depth}`;
         this.display.drawText(1, 0, `%c{${CONFIG.colors.ui.text}}${statsText}`);
     }
 
     updateStats() {
         const statsElement = document.getElementById('player-stats');
+        if (!statsElement) {
+            return;
+        }
+
         if (this.player) {
+            const attack = this.player.getStatBreakdown ? this.player.getStatBreakdown('attack') : {
+                base: this.player.attack,
+                equipment: 0,
+                status: 0,
+                total: this.player.attack
+            };
+            const defense = this.player.getStatBreakdown ? this.player.getStatBreakdown('defense') : {
+                base: this.player.defense,
+                equipment: 0,
+                status: 0,
+                total: this.player.defense
+            };
+            const statusSummary = this.getStatusSummary(this.player);
+
             statsElement.innerHTML = `
                 <div>HP: ${this.player.hp}/${this.player.maxHp}</div>
-                <div>Attack: ${this.player.attack}</div>
-                <div>Defense: ${this.player.defense}</div>
+                <div>Attack: ${attack.total} (Base ${attack.base} | Gear ${attack.equipment} | Status ${attack.status})</div>
+                <div>Defense: ${defense.total} (Base ${defense.base} | Gear ${defense.equipment} | Status ${defense.status})</div>
+                <div>Status: ${statusSummary}</div>
                 <div>Level: ${this.player.level}</div>
                 <div>Exp: ${this.player.exp}</div>
                 <div>Depth: ${this.depth}</div>
