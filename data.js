@@ -19,7 +19,21 @@ class GameData {
                     defense: this.game.player.defense,
                     level: this.game.player.level,
                     exp: this.game.player.exp,
-                    gold: this.game.player.gold || 0
+                    gold: this.game.player.gold || 0,
+                    inventory: (this.game.player.inventory || []).map(item => ({
+                        id: item.id,
+                        quantity: item.quantity || 1,
+                        equipped: !!item.equipped
+                    })),
+                    equipment: (() => {
+                        const result = {};
+                        if (this.game.player.equipment) {
+                            for (const [slot, equippedItem] of Object.entries(this.game.player.equipment)) {
+                                result[slot] = equippedItem ? equippedItem.id : null;
+                            }
+                        }
+                        return result;
+                    })()
                 },
                 gameMode: this.game.gameMode,
                 level: this.game.level,
@@ -62,9 +76,17 @@ class GameData {
             }
             
             this.game.startGame(saveData.gameMode);
-            
+
             Object.assign(this.game.player, saveData.player);
-            
+
+            if (typeof this.game.rebuildInventoryFromSave === 'function') {
+                const inventoryData = Array.isArray(saveData.player.inventory)
+                    ? saveData.player.inventory
+                    : [];
+                const equipmentData = saveData.player.equipment || {};
+                this.game.rebuildInventoryFromSave(inventoryData, equipmentData);
+            }
+
             const depth = saveData.depth || saveData.level || 1;
             this.game.depth = depth;
             this.game.level = depth;

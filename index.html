@@ -81,6 +81,49 @@
             z-index: 10;
             pointer-events: auto; /* Make the modal clickable */
         }
+
+        #inventory-content .inventory-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+
+        #inventory-content .inventory-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+            gap: 10px;
+        }
+
+        #inventory-content .item-label {
+            flex: 1;
+        }
+
+        #inventory-content .equipped {
+            color: #5cf;
+        }
+
+        #inventory-content .item-actions button {
+            margin-left: 4px;
+            padding: 2px 6px;
+            background: #333;
+            color: #eee;
+            border: 1px solid #555;
+            cursor: pointer;
+            font-family: monospace;
+        }
+
+        #inventory-content .item-actions button:hover {
+            background: #444;
+            border-color: #777;
+        }
+
+        #inventory-content .inventory-hint {
+            margin-top: 12px;
+            color: #aaa;
+            font-size: 0.9em;
+        }
         
         canvas {
             display: block;

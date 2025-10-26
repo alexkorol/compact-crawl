@@ -232,7 +232,8 @@ class DungeonGenerator {
                 items.push({
                     x: position.x,
                     y: position.y,
-                    type: itemType,
+                    id: itemType,
+                    type: itemData.type || 'misc',
                     ...itemData
                 });
                 

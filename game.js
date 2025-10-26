@@ -7,6 +7,8 @@ class Game {
         this.FLOOR_TILE = '.';
         this.depth = 1;
         this.playerUsedStairs = false;
+        this.inventoryOpen = false;
+        this.inventoryDropMode = false;
         
         // Initialize display
         this.display = new ROT.Display({
@@ -166,6 +168,17 @@ class Game {
         this.turns = 0;
         this.depth = 1;
         this.level = 1;
+        this.inventoryOpen = false;
+        this.inventoryDropMode = false;
+
+        if (typeof toggleInventoryScreen === 'function') {
+            toggleInventoryScreen(false);
+        } else {
+            const inventoryScreen = document.getElementById('inventory-screen');
+            if (inventoryScreen) {
+                inventoryScreen.style.display = 'none';
+            }
+        }
 
         try {
             // Get display dimensions
@@ -1157,9 +1170,20 @@ setupSandboxMode() {
     
     handleKeyDown(e) {
         if (this.gameState !== 'playing') return;
-        
+
+        if (this.inventoryOpen) {
+            this.handleInventoryInput(e);
+            return;
+        }
+
+        if (e.key && e.key.toLowerCase() === 'i') {
+            e.preventDefault();
+            this.openInventory();
+            return;
+        }
+
         console.log('Key pressed:', e.key);
-        
+
         // Help screen
         if (e.key === '?' || e.key === '/') {
             this.showHelpScreen();
@@ -1247,6 +1271,92 @@ setupSandboxMode() {
                     return;
                 }
                 this.endPlayerTurn();
+            }
+        }
+    }
+
+    handleInventoryInput(e) {
+        e.preventDefault();
+
+        const key = e.key || '';
+        const lower = key.toLowerCase();
+
+        if (this.inventoryDropMode) {
+            if (key === 'Escape') {
+                this.inventoryDropMode = false;
+                return;
+            }
+
+            if (lower === 'i') {
+                this.closeInventory();
+                return;
+            }
+
+            if (lower === 'd') {
+                this.inventoryDropMode = false;
+                return;
+            }
+
+            if (/^[1-9]$/.test(key)) {
+                const index = parseInt(key, 10) - 1;
+                this.dropInventoryItem(index);
+                return;
+            }
+
+            return;
+        }
+
+        if (key === 'Escape' || lower === 'i') {
+            this.closeInventory();
+            return;
+        }
+
+        if (lower === 'd') {
+            this.inventoryDropMode = true;
+            this.addMessage('Drop which item? Press the item number or Esc to cancel.', CONFIG.colors.ui.info);
+            return;
+        }
+
+        if (/^[1-9]$/.test(key)) {
+            const index = parseInt(key, 10) - 1;
+            this.useInventoryItem(index);
+        }
+    }
+
+    openInventory() {
+        if (this.inventoryOpen) {
+            if (typeof updateInventoryDisplay === 'function') {
+                updateInventoryDisplay();
+            }
+            return;
+        }
+
+        this.inventoryOpen = true;
+        this.inventoryDropMode = false;
+
+        if (typeof toggleInventoryScreen === 'function') {
+            toggleInventoryScreen(true);
+        }
+
+        if (typeof updateInventoryDisplay === 'function') {
+            updateInventoryDisplay();
+        }
+    }
+
+    closeInventory() {
+        if (!this.inventoryOpen) {
+            return;
+        }
+
+        this.inventoryOpen = false;
+        this.inventoryDropMode = false;
+
+        if (typeof toggleInventoryScreen === 'function') {
+            toggleInventoryScreen(false);
+        } else {
+            const screen = document.getElementById('inventory-screen');
+            if (screen) {
+                screen.style.display = 'none';
             }
         }
     }
@@ -1437,42 +1547,436 @@ setupSandboxMode() {
     }
 
     pickUpItem(item, index) {
+        if (!item || !this.player) {
+            return false;
+        }
+
+        const mapKey = `${item.x},${item.y}`;
+        if (this.map && this.map[mapKey] === 'i') {
+            this.map[mapKey] = this.FLOOR_TILE;
+        }
+
+        if (typeof index === 'number' && index >= 0) {
+            this.items.splice(index, 1);
+        }
+
+        const inventoryItem = this.createInventoryItem(item);
+        let addedToExistingStack = false;
+
+        if (inventoryItem.stackable) {
+            const existing = this.player.inventory.find(inv => inv.id === inventoryItem.id);
+            if (existing) {
+                existing.quantity = (existing.quantity || 1) + (inventoryItem.quantity || 1);
+                addedToExistingStack = true;
+            }
+        }
+
+        if (!addedToExistingStack) {
+            this.player.inventory.push(inventoryItem);
+        }
+
+        const itemName = inventoryItem.quantity && inventoryItem.quantity > 1
+            ? `${inventoryItem.quantity} ${inventoryItem.name}`
+            : `the ${inventoryItem.name}`;
+        this.addMessage(`You pick up ${itemName}.`, CONFIG.colors.ui.info);
+
+        if (this.inventoryOpen && typeof updateInventoryDisplay === 'function') {
+            updateInventoryDisplay();
+        }
+
+        return true;
+    }
+
+    createInventoryItem(item) {
+        const baseId = item.id || item.itemKey || null;
+        let baseData = null;
+        if (typeof ITEMS !== 'undefined') {
+            if (baseId && ITEMS[baseId]) {
+                baseData = ITEMS[baseId];
+            } else if (!baseId && item.name) {
+                const match = Object.entries(ITEMS).find(([, data]) => data.name === item.name);
+                if (match) {
+                    baseData = match[1];
+                }
+            }
+        }
+
+        const id = baseId || (baseData && baseData.id) ||
+            (item.name ? item.name.toLowerCase().replace(/[^a-z0-9]+/g, '-') : `item-${Date.now()}`);
+
+        const dataSource = baseData ? { ...baseData } : {};
+
+        return {
+            id,
+            name: item.name || dataSource.name || 'Unknown Item',
+            symbol: item.symbol || dataSource.symbol || '?',
+            color: item.color || dataSource.color || '#fff',
+            type: item.type || dataSource.type || 'misc',
+            effect: item.effect ?? dataSource.effect,
+            power: item.power ?? dataSource.power ?? 0,
+            attack: item.attack ?? dataSource.attack ?? 0,
+            defense: item.defense ?? dataSource.defense ?? 0,
+            slot: item.slot ?? dataSource.slot ?? null,
+            stackable: item.stackable ?? dataSource.stackable ?? false,
+            nutrition: item.nutrition ?? dataSource.nutrition ?? 0,
+            quantity: item.quantity != null ? item.quantity : 1,
+            equipped: false
+        };
+    }
+
+    createGroundItem(item) {
+        const base = typeof ITEMS !== 'undefined' && item.id && ITEMS[item.id]
+            ? ITEMS[item.id]
+            : null;
+
+        return {
+            x: this.player.x,
+            y: this.player.y,
+            id: item.id,
+            name: item.name || (base && base.name) || 'Item',
+            symbol: item.symbol || (base && base.symbol) || '?',
+            color: item.color || (base && base.color) || '#fff',
+            type: item.type || (base && base.type) || 'misc',
+            effect: item.effect ?? (base ? base.effect : undefined),
+            power: item.power ?? (base ? base.power : undefined),
+            attack: item.attack ?? (base ? base.attack : undefined),
+            defense: item.defense ?? (base ? base.defense : undefined),
+            slot: item.slot ?? (base ? base.slot : undefined),
+            stackable: item.stackable ?? (base ? base.stackable : false),
+            nutrition: item.nutrition ?? (base ? base.nutrition : undefined)
+        };
+    }
+
+    consumeInventoryItem(index, amount = 1) {
+        if (!this.player || !this.player.inventory) return;
+
+        const item = this.player.inventory[index];
+        if (!item) return;
+
+        if (item.stackable) {
+            const current = item.quantity || 1;
+            const newQuantity = current - amount;
+            if (newQuantity > 0) {
+                item.quantity = newQuantity;
+                return;
+            }
+        }
+
+        this.player.inventory.splice(index, 1);
+    }
+
+    afterInventoryAction() {
+        this.closeInventory();
+
+        if (this.player) {
+            this.player.computeFOV();
+        }
+
+        this.drawGame();
+        this.updateStats();
+        if (typeof updatePlayerStats === 'function') {
+            updatePlayerStats();
+        }
+
+        this.endPlayerTurn();
+    }
+
+    useInventoryItem(index) {
+        if (!this.player || !this.player.inventory) {
+            return false;
+        }
+
+        const item = this.player.inventory[index];
+        if (!item) {
+            this.addMessage('That inventory slot is empty.', CONFIG.colors.ui.warning);
+            return false;
+        }
+
+        let actionTaken = false;
+        let consumeItem = false;
+
         switch (item.type) {
             case 'potion':
-                // Heal player
-                const healAmount = Math.floor(this.player.maxHp / 2);
-                this.player.hp = Math.min(this.player.hp + healAmount, this.player.maxHp);
-                this.addMessage(`You drink a healing potion and recover ${healAmount} HP.`);
+                actionTaken = this.usePotionItem(item);
+                consumeItem = actionTaken;
                 break;
-            case 'gold':
-                // Add gold
-                this.player.gold = (this.player.gold || 0) + item.value;
-                this.addMessage(`You pick up ${item.value} gold.`);
-                break;
-            case 'weapon':
-                // Increase attack
-                this.player.attack += item.attack || 1;
-                this.addMessage(`You equip a weapon and gain ${item.attack || 1} attack.`);
-                break;
-            case 'armor':
-                // Increase defense
-                this.player.defense += item.defense || 1;
-                this.addMessage(`You equip armor and gain ${item.defense || 1} defense.`);
+            case 'food':
+                actionTaken = this.useFoodItem(item);
+                consumeItem = actionTaken;
                 break;
             case 'scroll':
-                // Random effect based on scroll type
-                if (item.effect === 'teleport') {
-                    this.teleportPlayer();
-                } else {
-                    // Generic buff
-                    this.player.attack += 1;
-                    this.addMessage(`You read a mysterious scroll and feel stronger!`);
-                }
+                actionTaken = this.useScrollItem(item);
+                consumeItem = actionTaken;
                 break;
+            case 'weapon':
+            case 'armor':
+                actionTaken = this.toggleEquipItem(item);
+                consumeItem = false;
+                break;
+            default:
+                this.addMessage(`You are unsure how to use the ${item.name}.`, CONFIG.colors.ui.warning);
+                return false;
         }
-        
-        // Remove item from game
-        this.items.splice(index, 1);
+
+        if (!actionTaken) {
+            return false;
+        }
+
+        if (consumeItem) {
+            this.consumeInventoryItem(index, 1);
+        }
+
+        this.afterInventoryAction();
+        return true;
+    }
+
+    dropInventoryItem(index) {
+        if (!this.player || !this.player.inventory) {
+            return false;
+        }
+
+        const item = this.player.inventory[index];
+        if (!item) {
+            this.addMessage('That inventory slot is empty.', CONFIG.colors.ui.warning);
+            return false;
+        }
+
+        const occupied = this.items.some(existing => existing.x === this.player.x && existing.y === this.player.y);
+        if (occupied) {
+            this.addMessage('There is already an item here.', CONFIG.colors.ui.warning);
+            this.inventoryDropMode = false;
+            return false;
+        }
+
+        if (item.equipped) {
+            this.unequipItem(item, { silent: true });
+        }
+
+        const groundItem = this.createGroundItem(item);
+        this.items.push(groundItem);
+        if (this.map) {
+            this.map[`${groundItem.x},${groundItem.y}`] = 'i';
+        }
+
+        this.consumeInventoryItem(index, 1);
+        this.addMessage(`You drop the ${groundItem.name}.`, CONFIG.colors.ui.info);
+
+        this.inventoryDropMode = false;
+        this.afterInventoryAction();
+        return true;
+    }
+
+    usePotionItem(item) {
+        const effect = item.effect || 'heal';
+
+        if (effect === 'heal') {
+            const healAmount = item.power || Math.max(5, Math.floor(this.player.maxHp / 2));
+            const missing = this.player.maxHp - this.player.hp;
+
+            if (missing <= 0) {
+                this.addMessage('You are already at full health.', CONFIG.colors.ui.warning);
+                return false;
+            }
+
+            const restored = Math.min(healAmount, missing);
+            this.player.hp += restored;
+            this.addMessage(`You drink the ${item.name} and recover ${restored} HP.`, CONFIG.colors.ui.info);
+            return true;
+        }
+
+        if (effect === 'strength') {
+            const bonus = item.power || 1;
+            this.player.attack += bonus;
+            this.addMessage(`You feel a surge of strength! Attack +${bonus}.`, CONFIG.colors.ui.highlight);
+            return true;
+        }
+
+        this.addMessage(`The ${item.name} has no noticeable effect.`, CONFIG.colors.ui.warning);
+        return true;
+    }
+
+    useFoodItem(item) {
+        const restore = Math.max(1, Math.floor((item.nutrition || 50) / 60));
+        const missing = this.player.maxHp - this.player.hp;
+
+        if (missing <= 0) {
+            this.addMessage('You are not hungry enough to benefit from that right now.', CONFIG.colors.ui.warning);
+            return false;
+        }
+
+        const healed = Math.min(restore, missing);
+        this.player.hp += healed;
+        this.addMessage(`You eat the ${item.name} and recover ${healed} HP.`, CONFIG.colors.ui.info);
+        return true;
+    }
+
+    useScrollItem(item) {
+        const effect = item.effect;
+
+        if (effect === 'teleport') {
+            this.addMessage(`You read the ${item.name}.`, CONFIG.colors.ui.info);
+            this.teleportPlayer();
+            return true;
+        }
+
+        if (effect === 'magic_mapping') {
+            this.addMessage('The scroll reveals the layout of the dungeon!', CONFIG.colors.ui.highlight);
+            this.revealDungeonMap();
+            return true;
+        }
+
+        this.addMessage(`Mysterious runes fade from the ${item.name} with no effect.`, CONFIG.colors.ui.warning);
+        return true;
+    }
+
+    toggleEquipItem(item) {
+        if (!item.slot) {
+            this.addMessage(`You cannot equip the ${item.name}.`, CONFIG.colors.ui.warning);
+            return false;
+        }
+
+        if (!this.player.equipment) {
+            this.player.equipment = { hand: null, body: null };
+        }
+
+        if (item.equipped) {
+            return this.unequipItem(item);
+        }
+
+        return this.equipItem(item);
+    }
+
+    equipItem(item, options = {}) {
+        if (!item || !item.slot) {
+            this.addMessage(`You cannot equip the ${item ? item.name : 'item'}.`, CONFIG.colors.ui.warning);
+            return false;
+        }
+
+        const slot = item.slot;
+        const current = this.player.equipment[slot];
+        if (current === item) {
+            return true;
+        }
+
+        if (current) {
+            this.unequipItem(current, { silent: true });
+        }
+
+        this.player.equipment[slot] = item;
+        item.equipped = true;
+
+        if (item.attack) {
+            this.player.attack += item.attack;
+        }
+
+        if (item.defense) {
+            this.player.defense += item.defense;
+        }
+
+        if (!options.silent) {
+            this.addMessage(`You equip the ${item.name}.`, CONFIG.colors.ui.info);
+        }
+
+        return true;
+    }
+
+    unequipItem(item, options = {}) {
+        if (!item || !item.slot || !this.player.equipment) {
+            return false;
+        }
+
+        const slot = item.slot;
+        if (this.player.equipment[slot] !== item) {
+            item.equipped = false;
+            return true;
+        }
+
+        this.player.equipment[slot] = null;
+
+        if (item.attack) {
+            this.player.attack = Math.max(1, this.player.attack - item.attack);
+        }
+
+        if (item.defense) {
+            this.player.defense = Math.max(0, this.player.defense - item.defense);
+        }
+
+        item.equipped = false;
+
+        if (!options.silent) {
+            this.addMessage(`You remove the ${item.name}.`, CONFIG.colors.ui.info);
+        }
+
+        return true;
+    }
+
+    revealDungeonMap() {
+        if (!this.map) {
+            return;
+        }
+
+        if (!this.explored) {
+            this.explored = {};
+        }
+
+        for (const key of Object.keys(this.map)) {
+            this.explored[key] = true;
+        }
+
+        if (this.player) {
+            this.player.computeFOV();
+        }
+
+        this.drawGame();
+    }
+
+    rebuildInventoryFromSave(inventoryData = [], equipmentData = {}) {
+        if (!this.player) {
+            return;
+        }
+
+        this.player.inventory = [];
+        this.player.equipment = this.player.equipment || { hand: null, body: null };
+        this.player.equipment.hand = null;
+        this.player.equipment.body = null;
+
+        if (Array.isArray(inventoryData)) {
+            inventoryData.forEach(entry => {
+                if (!entry) return;
+                const base = (typeof ITEMS !== 'undefined' && entry.id && ITEMS[entry.id]) ? ITEMS[entry.id] : {};
+                const itemData = {
+                    id: entry.id,
+                    name: base.name || entry.id || 'Unknown Item',
+                    symbol: base.symbol,
+                    color: base.color,
+                    type: base.type,
+                    effect: base.effect,
+                    power: base.power,
+                    attack: base.attack,
+                    defense: base.defense,
+                    slot: base.slot,
+                    stackable: base.stackable,
+                    nutrition: base.nutrition,
+                    quantity: entry.quantity || 1
+                };
+
+                const inventoryItem = this.createInventoryItem(itemData);
+                inventoryItem.quantity = entry.quantity || 1;
+                inventoryItem.equipped = false;
+                this.player.inventory.push(inventoryItem);
+            });
+        }
+
+        if (equipmentData && typeof equipmentData === 'object') {
+            Object.entries(equipmentData).forEach(([slot, itemId]) => {
+                if (!slot || !itemId) return;
+                const found = this.player.inventory.find(inv => inv.id === itemId);
+                if (found) {
+                    this.player.equipment[slot] = found;
+                    found.equipped = true;
+                }
+            });
+        }
     }
     
     teleportPlayer() {
