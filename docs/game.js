@@ -16,6 +16,8 @@ class Game {
         this.messageBufferIndex = 0;
         this.messageBufferCount = 0;
 
+        this.gameOverTimeout = null;
+
         this.setupAudio();
         this.rebuildMessageBufferFromHistory(this.messages);
         
@@ -118,7 +120,8 @@ class Game {
     showGameModeMenu() {
         this.gameState = 'menu';
         this.display.clear();
-        
+
+        this.detachMenuInputHandler();
         const menuTitle = "SELECT GAME MODE";
         const menuOptions = [
             "1) Main Game - Explore the dungeon",
@@ -152,12 +155,12 @@ class Game {
             startY + menuOptions.length * 2 + 2,
             '%c{#999}Press 1, 2, or 3 to select'
         );
-        
+
         // Update input handler for menu selection
         window.removeEventListener('keydown', this.titleInputHandler);
         this.menuInputHandler = (e) => {
             if (this.gameState !== 'menu') return;
-            
+
             console.log('Menu selection key:', e.key);
             switch(e.key) {
                 case '1':
@@ -178,17 +181,105 @@ class Game {
         window.addEventListener('keydown', this.menuInputHandler);
     }
 
+    detachMenuInputHandler() {
+        if (this.menuInputHandler) {
+            window.removeEventListener('keydown', this.menuInputHandler);
+            this.menuInputHandler = null;
+        }
+    }
+
+    detachGameInputHandler() {
+        if (this.boundHandleKeyDown) {
+            document.removeEventListener('keydown', this.boundHandleKeyDown);
+            this.boundHandleKeyDown = null;
+        }
+    }
+
+    closeInventoryUI() {
+        if (typeof toggleInventoryScreen === 'function') {
+            toggleInventoryScreen(false);
+        } else {
+            const inventoryScreen = document.getElementById('inventory-screen');
+            if (inventoryScreen) {
+                inventoryScreen.style.display = 'none';
+            }
+        }
+    }
+
+    hideSandboxUI() {
+        const panel = document.getElementById('sandbox-panel');
+        if (panel && typeof toggleSandboxControls === 'function') {
+            toggleSandboxControls(this, false);
+        }
+
+        if (panel) {
+            panel.style.display = 'none';
+        }
+
+        const fontPreview = document.getElementById('font-preview');
+        if (fontPreview) {
+            fontPreview.style.display = 'none';
+        }
+    }
+
+    quitToMenu(requireConfirm = true) {
+        if (this.gameState !== 'playing' && this.gameState !== 'gameover') {
+            return false;
+        }
+
+        if (requireConfirm && typeof window !== 'undefined' && typeof window.confirm === 'function') {
+            const confirmed = window.confirm('Return to the mode select screen? Current progress will be lost.');
+            if (!confirmed) {
+                return false;
+            }
+        }
+
+        if (this.gameOverTimeout) {
+            clearTimeout(this.gameOverTimeout);
+            this.gameOverTimeout = null;
+        }
+
+        if (this.engine) {
+            this.engine.lock();
+        }
+
+        this.detachGameInputHandler();
+        this.detachMenuInputHandler();
+
+        this.engine = null;
+        this.scheduler = null;
+
+        this.inventoryOpen = false;
+        this.inventoryDropMode = false;
+        this.closeInventoryUI();
+        this.hideSandboxUI();
+
+        this.entities = new Set();
+        this.items = [];
+        this.explored = {};
+
+        this.messages = [];
+        this.rebuildMessageBufferFromHistory(this.messages);
+        this.updateExternalUI();
+
+        this.showGameModeMenu();
+        return true;
+    }
+
     // Update startGame to handle different game modes
     startGame(gameMode = 'main') {
         console.log(`Starting new game in ${gameMode} mode`);
-        
-        // Remove menu input handler
-        window.removeEventListener('keydown', this.menuInputHandler);
-        
+
+        // Remove any existing handlers or overlays from previous sessions
+        this.detachGameInputHandler();
+        this.detachMenuInputHandler();
+        this.hideSandboxUI();
+        this.closeInventoryUI();
+
         // Change state first
         this.gameState = 'playing';
         this.gameMode = gameMode;
-        
+
         // Dispatch event for mode change
         const event = new CustomEvent('gameModeChanged', {
             detail: { mode: gameMode }
@@ -207,15 +298,7 @@ class Game {
         this.level = 1;
         this.inventoryOpen = false;
         this.inventoryDropMode = false;
-
-        if (typeof toggleInventoryScreen === 'function') {
-            toggleInventoryScreen(false);
-        } else {
-            const inventoryScreen = document.getElementById('inventory-screen');
-            if (inventoryScreen) {
-                inventoryScreen.style.display = 'none';
-            }
-        }
+        this.closeInventoryUI();
 
         try {
             // Get display dimensions
@@ -267,6 +350,7 @@ class Game {
             this.drawGame();
 
             // Setup input handler - make sure we bind it and store the bound reference
+            this.detachGameInputHandler();
             this.boundHandleKeyDown = this.handleKeyDown.bind(this);
             document.addEventListener('keydown', this.boundHandleKeyDown);
 
@@ -274,11 +358,22 @@ class Game {
             this.addMessage("Welcome to the dungeon!", "#ff0");
 
             // Start the turn engine
-            this.engine.start();
+            if (this.engine && typeof this.engine.start === 'function') {
+                this.engine.start();
+            } else {
+                throw new Error('Game engine failed to initialize.');
+            }
 
             return true;
         } catch (err) {
             console.error('Error in startGame:', err);
+            this.detachGameInputHandler();
+            this.hideSandboxUI();
+            this.closeInventoryUI();
+            if (typeof this.addMessage === 'function') {
+                this.addMessage('Failed to start game mode. Returning to menu.', CONFIG.colors.ui.warning || '#f55');
+            }
+            this.showGameModeMenu();
             return false;
         }
     }
@@ -1358,6 +1453,13 @@ class Game {
             e.preventDefault();
             this.openInventory();
             return;
+        }
+
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            if (this.quitToMenu(true)) {
+                return;
+            }
         }
 
         console.log('Key pressed:', e.key);
@@ -2926,13 +3028,17 @@ class Game {
         this.display.drawText(0, gameOverY, `%c{${CONFIG.colors.ui.warning}}%b{#000}${"GAME OVER".padStart(40)}`);
         
         // Remove any existing input handlers to prevent duplicates
-        document.removeEventListener('keydown', this.handleKeyDown);
-        
+        this.detachGameInputHandler();
+
+        if (this.gameOverTimeout) {
+            clearTimeout(this.gameOverTimeout);
+        }
+
         // Reset after delay
-        setTimeout(() => {
+        this.gameOverTimeout = setTimeout(() => {
             this.gameState = 'title';
             this.showTitleScreen();
-            
+
             // Re-add the title input handler that was removed when starting the game
             this.titleInputHandler = (e) => {
                 if (this.gameState === 'title') {
@@ -2942,6 +3048,7 @@ class Game {
                 }
             };
             window.addEventListener('keydown', this.titleInputHandler);
+            this.gameOverTimeout = null;
         }, 2000);
     }
 
