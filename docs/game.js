@@ -1225,9 +1225,14 @@ class Game {
                 }
             }
 
-            this.drawUIBackground();
-            this.drawHud(displayWidth, displayHeight, colors);
-            this.drawMessageRows(displayWidth, displayHeight, colors);
+            const useHtmlHud = this.shouldUseHtmlHud();
+
+            this.drawUIBackground({ drawDividers: !useHtmlHud });
+
+            if (!useHtmlHud) {
+                this.drawHud(displayWidth, displayHeight, colors);
+                this.drawMessageRows(displayWidth, displayHeight, colors);
+            }
 
             this.updateExternalUI();
             return true;
@@ -1237,7 +1242,8 @@ class Game {
         }
     }
     
-    drawUIBackground() {
+    drawUIBackground(options = {}) {
+        const { drawDividers = true } = options;
         const displayWidth = this.display.getOptions().width;
         const displayHeight = this.display.getOptions().height;
         const hudRows = 2;
@@ -1253,10 +1259,12 @@ class Game {
             }
         }
 
-        const topDividerY = hudRows;
-        for (let x = 0; x < displayWidth; x++) {
-            this.display.draw(x, topDividerY, '─', '#444');
-            this.display.draw(x, bottomDividerY, '─', '#444');
+        if (drawDividers) {
+            const topDividerY = hudRows;
+            for (let x = 0; x < displayWidth; x++) {
+                this.display.draw(x, topDividerY, '─', '#444');
+                this.display.draw(x, bottomDividerY, '─', '#444');
+            }
         }
     }
 
@@ -2645,6 +2653,16 @@ class Game {
     updateExternalUI() {
         this.updateStatsOverlay();
         this.updateMessageOverlay();
+    }
+
+    shouldUseHtmlHud() {
+        if (typeof document === 'undefined') {
+            return false;
+        }
+
+        const statsOverlay = document.getElementById('stats-overlay');
+        const messageOverlay = document.getElementById('message-overlay');
+        return !!(statsOverlay && messageOverlay);
     }
 
     updateStatsOverlay() {
