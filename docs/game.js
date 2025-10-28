@@ -551,6 +551,14 @@ class Game {
             }
         }
 
+        if (typeof getValidRoomPosition === 'function') {
+            const rng = (typeof ROT !== 'undefined' && ROT.RNG) ? ROT.RNG : null;
+            const safePosition = getValidRoomPosition(room, rng);
+            if (safePosition) {
+                return this.normalizePosition(safePosition);
+            }
+        }
+
         if (typeof room.getRandomPosition === 'function') {
             const position = room.getRandomPosition();
             if (position) {
@@ -612,7 +620,7 @@ class Game {
 
             const monsterData = MONSTERS[type];
             const globalPos = toGlobal(localPos);
-            const monster = new Monster(globalPos.x, globalPos.y, monsterData);
+            const monster = new Monster(globalPos.x, globalPos.y, monsterData, this);
             monster.type = monster.type || type;
             monsters.push(monster);
             blocked.add(`${localPos.x},${localPos.y}`);
@@ -1155,6 +1163,10 @@ class Game {
     }
 
     addMonster(monster) {
+        if (monster && typeof monster.setGame === 'function') {
+            monster.setGame(this);
+        }
+
         this.entities.add(monster);
         if (this.scheduler) {
             this.scheduler.add(monster, false);
@@ -1214,7 +1226,7 @@ class Game {
 
             const scaleFactor = this.calculateArenaMonsterScale(monsterData, difficultyDepth);
             const scaledData = this.scaleArenaMonster(monsterData, scaleFactor);
-            const monster = new Monster(spawnPosition.x, spawnPosition.y, scaledData);
+            const monster = new Monster(spawnPosition.x, spawnPosition.y, scaledData, this);
             monster.type = monster.type || type;
 
             console.log(`Spawning arena monster: ${monster.name} at ${spawnPosition.x},${spawnPosition.y}`);
@@ -1257,7 +1269,7 @@ class Game {
             
             // Create the monster
             try {
-                const monster = new Monster(x, y, monsterData);
+                const monster = new Monster(x, y, monsterData, this);
                 console.log(`Spawning test monster: ${monsterType} at ${x},${y}`);
                 this.addMonster(monster);
                 
@@ -1283,7 +1295,8 @@ class Game {
             const goblin = new Monster(
                 this.player.x + 5,  // Place 5 tiles to the right of player
                 this.player.y,
-                MONSTERS.goblin
+                MONSTERS.goblin,
+                this
             );
             
             console.log("Spawning test goblin at", goblin.x, goblin.y);
@@ -1293,7 +1306,8 @@ class Game {
             const goblin2 = new Monster(
                 this.player.x,
                 this.player.y - 3,  // Place 3 tiles above player
-                MONSTERS.goblin
+                MONSTERS.goblin,
+                this
             );
             
             console.log("Spawning second test goblin at", goblin2.x, goblin2.y);

@@ -264,6 +264,14 @@ class DungeonGenerator {
             return null;
         }
 
+        if (typeof getValidRoomPosition === 'function') {
+            const rng = (typeof ROT !== 'undefined' && ROT.RNG) ? ROT.RNG : null;
+            const position = getValidRoomPosition(room, rng);
+            if (position) {
+                return { x: position.x, y: position.y };
+            }
+        }
+
         if (typeof room.getRandomPosition === 'function') {
             const normalized = this.normalizePoint(room.getRandomPosition());
             if (normalized) {
@@ -659,7 +667,7 @@ class DungeonGenerator {
                         }
                     }
                     
-                    monsters.push(new Monster(monsterX, monsterY, finalMonsterData));
+                    monsters.push(new Monster(monsterX, monsterY, finalMonsterData, this.game));
                 }
             }
         }
@@ -671,7 +679,7 @@ class DungeonGenerator {
             if (Math.random() > 0.5) {
                 // Spawn a goblin using MONSTERS.goblin data
                 const goblinData = MONSTERS.goblin;
-                const monster = new Monster(center.x, center.y, goblinData);
+                const monster = new Monster(center.x, center.y, goblinData, this.game);
                 monsters.push(monster);
             }
         }

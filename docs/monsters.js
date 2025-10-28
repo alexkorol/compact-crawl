@@ -262,22 +262,30 @@ class Shoggoth extends TentacleMonster {
                 
                 if (this.isValidPosition(newX, newY)) {
                     // Create and add the new shoggoth
-                    const baby = new Monster(newX, newY, babyData);
+                    const game =
+                        typeof this.monster.resolveGame === 'function'
+                            ? this.monster.resolveGame()
+                            : (typeof window !== 'undefined' ? window.game : null);
+                    const baby = new Monster(newX, newY, babyData, game);
                     baby.name = "Shoggoth Spawn";
-                    if (typeof game.addMonster === 'function') {
+                    if (game && typeof game.addMonster === 'function') {
                         game.addMonster(baby);
-                    } else {
+                    } else if (game && game.entities) {
                         game.entities.add(baby);
                         if (game.scheduler) {
                             game.scheduler.add(baby, false);
                         }
+                    } else {
+                        console.warn('Unable to add shoggoth spawn - no active game instance available.');
                     }
-                    
+
                     // Reduce parent shoggoth's HP
                     this.monster.hp = Math.floor(this.monster.hp / 2);
                     
                     // Add message
-                    game.addMessage("The shoggoth splits in two!", CONFIG.colors.ui.warning);
+                    if (game && typeof game.addMessage === 'function') {
+                        game.addMessage("The shoggoth splits in two!", CONFIG.colors.ui.warning);
+                    }
                     
                     // Start cooldown
                     this.splitCooldown = 30;

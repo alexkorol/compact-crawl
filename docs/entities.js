@@ -185,9 +185,9 @@ class Player extends Entity {
 // Fix the Monster class to better handle different monster types
 
 class Monster extends Entity {
-    constructor(x, y, data) {
+    constructor(x, y, data, game) {
         super(x, y, data.symbol || 'M', data.color || '#f00');
-        
+
         // Copy monster data properties
         this.name = data.name || "Unknown Monster";
         this.hp = data.hp || 5;
@@ -212,22 +212,40 @@ class Monster extends Entity {
         };
         
         // Initialize segments for special monsters
-        if (data.behavior === "serpentine" || 
-            data.behavior === "tentacle" || 
+        if (data.behavior === "serpentine" ||
+            data.behavior === "tentacle" ||
             data.behavior === "multi_tentacle") {
             const segmentCount = data.segments || 3;
             const headCount = data.heads || 1;
             this.tentacleColors = data.tentacleColor || ["#88f", "#66d", "#44b"];
             this.initializeSegments(segmentCount, headCount);
         }
-        
+
+        this.game = game || (typeof window !== 'undefined' ? window.game : null);
+
         console.log(`Created monster: ${this.name} at (${this.x},${this.y})`);
 
         this.recalculateDerivedStats();
     }
 
+    setGame(game) {
+        this.game = game;
+    }
+
+    resolveGame() {
+        if (this.game) {
+            return this.game;
+        }
+
+        if (typeof window !== 'undefined' && window.game) {
+            return window.game;
+        }
+
+        return null;
+    }
+
     act() {
-        const game = window.game;
+        const game = this.resolveGame();
         if (!game) {
             return;
         }
@@ -243,7 +261,12 @@ class Monster extends Entity {
             return;
         }
 
-        if (this.hp <= 0 || !game.entities.has(this)) {
+        const entitySet = game.entities;
+        const hasEntity = entitySet && typeof entitySet.has === 'function'
+            ? entitySet.has(this)
+            : true;
+
+        if (this.hp <= 0 || !hasEntity) {
             if (game.scheduler) {
                 game.scheduler.remove(this);
             }
@@ -292,7 +315,11 @@ class Monster extends Entity {
             console.error(`Error in monster ${this.name} act():`, err);
         }
 
-        if (game.gameState === 'playing' && this.hp > 0 && game.entities.has(this)) {
+        const stillPresent = entitySet && typeof entitySet.has === 'function'
+            ? entitySet.has(this)
+            : true;
+
+        if (game.gameState === 'playing' && this.hp > 0 && stillPresent) {
             if (game.scheduler) {
                 game.scheduler.add(this, false);
             }
@@ -400,34 +427,37 @@ class Monster extends Entity {
         console.log(`${this.name} performing melee movement`);
         // Get path to player
         const path = this.getPathToPlayer();
-        
+
         if (path && path.length > 1) {
             const [nextX, nextY] = path[1]; // Move one tile only
             console.log(`Monster path next position: ${nextX},${nextY}`);
-            
+
             // If next position is the player, attack
-            if (nextX === window.game.player.x && nextY === window.game.player.y) {
+            const game = this.resolveGame();
+            if (game && game.player && nextX === game.player.x && nextY === game.player.y) {
                 console.log(`${this.name} is attacking player`);
                 this.attackPlayer();
-            } 
+            }
             // Otherwise, check if we can move there
             else {
                 let canMove = true;
-                
+
                 // Check if tile is walkable
                 const key = `${nextX},${nextY}`;
-                if (!(key in window.game.map) || window.game.map[key] === '#') {
+                if (!game || !game.map || !(key in game.map) || game.map[key] === '#') {
                     canMove = false;
                 }
-                
+
                 // Check if position is occupied by another entity
-                for (const entity of window.game.entities) {
-                    if (entity !== this && entity.x === nextX && entity.y === nextY) {
-                        canMove = false;
-                        break;
+                if (canMove && game && game.entities) {
+                    for (const entity of game.entities) {
+                        if (entity !== this && entity.x === nextX && entity.y === nextY) {
+                            canMove = false;
+                            break;
+                        }
                     }
                 }
-                
+
                 if (canMove) {
                     console.log(`${this.name} moving to ${nextX},${nextY}`);
                     this.x = nextX;
@@ -463,14 +493,16 @@ class Monster extends Entity {
         const head = this.segments[0];
         let newX = head.x;
         let newY = head.y;
-        
+
+        const game = this.resolveGame();
+
         // Get path to player
         const path = this.getPathToPlayer();
         if (path && path.length > 1) {
             [newX, newY] = path[1];
-            
+
             // Attack player if adjacent
-            if (newX === game.player.x && newY === game.player.y) {
+            if (game && game.player && newX === game.player.x && newY === game.player.y) {
                 this.attackPlayer();
                 return;
             }
@@ -487,7 +519,7 @@ class Monster extends Entity {
             // Move head to new position
             head.x = newX;
             head.y = newY;
-            
+
             // Update entity position to match head
             this.x = newX;
             this.y = newY;
@@ -503,19 +535,21 @@ class Monster extends Entity {
     tentacleMovement() {
         // Kraken/shoggoth movement - writhing tentacles with more random behavior
         const head = this.segments[0];
-        
+
         // 75% chance to move toward player, 25% chance for random movement
         let newX = head.x;
         let newY = head.y;
-        
+
+        const game = this.resolveGame();
+
         if (ROT.RNG.getUniform() < 0.75) {
             // Get path to player
             const path = this.getPathToPlayer();
             if (path && path.length > 1) {
                 [newX, newY] = path[1];
-                
+
                 // Attack player if adjacent
-                if (newX === game.player.x && newY === game.player.y) {
+                if (game && game.player && newX === game.player.x && newY === game.player.y) {
                     this.attackPlayer();
                     return;
                 }
@@ -575,21 +609,23 @@ class Monster extends Entity {
     multiTentacleMovement() {
         // Hydra/multi-headed movement
         // Each head moves somewhat independently
-        
+
         // First, move the main body/head
         const head = this.segments[0];
         let newX = head.x;
         let newY = head.y;
-        
+
+        const game = this.resolveGame();
+
         // 60% chance to move toward player, 40% chance for random
         if (ROT.RNG.getUniform() < 0.6) {
             // Get path to player
             const path = this.getPathToPlayer();
             if (path && path.length > 1) {
                 [newX, newY] = path[1];
-                
+
                 // Attack player if adjacent
-                if (newX === game.player.x && newY === game.player.y) {
+                if (game && game.player && newX === game.player.x && newY === game.player.y) {
                     this.attackPlayer();
                     return;
                 }
@@ -615,15 +651,15 @@ class Monster extends Entity {
             // Now move each head independently
             // Find all segments that are heads (except the main one)
             const headSegments = this.segments.filter(s => s.isHead && s !== this.segments[0]);
-            
+
             for (const headSeg of headSegments) {
                 // 70% chance to move toward player, 30% random
-                if (ROT.RNG.getUniform() < 0.7) {
+                if (ROT.RNG.getUniform() < 0.7 && game && game.player) {
                     const headPath = new ROT.Path.AStar(
                         game.player.x, game.player.y,
                         (x, y) => this.isValidMove(x, y)
                     );
-                    
+
                     const headNewPath = [];
                     headPath.compute(headSeg.x, headSeg.y, (x, y) => {
                         headNewPath.push([x, y]);
@@ -631,7 +667,7 @@ class Monster extends Entity {
                     
                     if (headNewPath.length > 1) {
                         const [headNextX, headNextY] = headNewPath[1];
-                        
+
                         // Attack if adjacent to player
                         if (headNextX === game.player.x && headNextY === game.player.y) {
                             this.attackPlayer();
@@ -693,9 +729,8 @@ class Monster extends Entity {
     }
 
     attackPlayer() {
-        // Use window.game to ensure we're accessing the global game object
-        const game = window.game;
-        
+        const game = this.resolveGame();
+
         if (!game || !game.player) {
             console.error("Cannot attack player - game or player not found");
             return;
@@ -752,29 +787,30 @@ class Monster extends Entity {
     }
 
     getPathToPlayer() {
-        // Use window.game to ensure we're accessing the global game object
-        const game = window.game;
-        if (!game || !game.player) {
+        const game = this.resolveGame();
+        if (!game || !game.player || !game.map) {
             console.error("Game or player not found");
             return [];
         }
-        
+
         // Create a pathfinding instance
         const astar = new ROT.Path.AStar(
-            game.player.x, 
+            game.player.x,
             game.player.y,
             (x, y) => {
                 // Is this position walkable?
                 const key = `${x},${y}`;
-                if (!(key in game.map) || game.map[key] === '#') return false;
-                
+                if (!game.map || !(key in game.map) || game.map[key] === '#') return false;
+
                 // Don't allow moving onto other monsters (except player)
-                for (const entity of game.entities) {
-                    if (entity !== this && entity !== game.player && entity.x === x && entity.y === y) {
-                        return false;
+                if (game.entities) {
+                    for (const entity of game.entities) {
+                        if (entity !== this && entity !== game.player && entity.x === x && entity.y === y) {
+                            return false;
+                        }
                     }
                 }
-                
+
                 // Position is walkable
                 return true;
             },
@@ -791,13 +827,16 @@ class Monster extends Entity {
     }
 
     isValidMove(x, y) {
-        // Use window.game to ensure we're accessing the global game object
-        const game = window.game;
-        
+        const game = this.resolveGame();
+
+        if (!game || !game.map || !game.mapBounds) {
+            return false;
+        }
+
         // Check bounds first
-        if (x < game.mapBounds.minX || 
-            x > game.mapBounds.maxX || 
-            y < game.mapBounds.minY || 
+        if (x < game.mapBounds.minX ||
+            x > game.mapBounds.maxX ||
+            y < game.mapBounds.minY ||
             y > game.mapBounds.maxY) {
             return false;
         }
@@ -808,21 +847,23 @@ class Monster extends Entity {
         if (game.map[key] === '#') return false;
         
         // Check for entities at target position (can't move onto another entity)
-        for (const entity of game.entities) {
-            if (entity !== this && entity.x === x && entity.y === y) {
-                // Allow moving onto player for attack
-                if (entity === game.player) return true;
-                return false;
+        if (game.entities) {
+            for (const entity of game.entities) {
+                if (entity !== this && entity.x === x && entity.y === y) {
+                    // Allow moving onto player for attack
+                    if (entity === game.player) return true;
+                    return false;
+                }
             }
         }
-        
+
         return true;
     }
 
     draw(ctx, offsetX, offsetY, tileSize) {
         super.draw(ctx, offsetX, offsetY, tileSize);
 
-        const game = window.game;
+        const game = this.resolveGame();
         if (!game || typeof game.isVisible !== 'function') {
             return;
         }

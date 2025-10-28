@@ -1,5 +1,119 @@
 // compact-crawl/utils.js - Utility functions and helpers
 
+// Normalize various point formats to an { x, y } object
+function normalizePoint(point) {
+    if (!point) {
+        return null;
+    }
+
+    if (Array.isArray(point) && point.length >= 2) {
+        const [x, y] = point;
+        if (typeof x === 'number' && typeof y === 'number') {
+            return { x, y };
+        }
+    } else if (typeof point === 'object') {
+        const { x, y } = point;
+        if (typeof x === 'number' && typeof y === 'number') {
+            return { x, y };
+        }
+    }
+
+    return null;
+}
+
+// Attempt to pull a random, walkable position from a ROT.js room.
+// Falls back to manual bounds calculations if needed.
+function getValidRoomPosition(room, rng = (typeof ROT !== 'undefined' ? ROT.RNG : null)) {
+    if (!room) {
+        return null;
+    }
+
+    const tryRandomPosition = () => {
+        if (typeof room.getRandomPosition !== 'function') {
+            return null;
+        }
+
+        try {
+            const args = [];
+            if (room.getRandomPosition.length > 0 && rng) {
+                args.push(rng);
+            }
+            const position = room.getRandomPosition(...args);
+            return normalizePoint(position);
+        } catch (error) {
+            console.warn('getValidRoomPosition: room.getRandomPosition failed', error);
+            return null;
+        }
+    };
+
+    const positionFromRandom = tryRandomPosition();
+    if (positionFromRandom) {
+        return positionFromRandom;
+    }
+
+    const resolveBound = (...candidates) => {
+        for (const candidate of candidates) {
+            if (typeof candidate === 'function') {
+                try {
+                    const value = candidate.call(room);
+                    if (typeof value === 'number') {
+                        return value;
+                    }
+                } catch (error) {
+                    // Ignore errors from incompatible room implementations
+                }
+            } else if (typeof candidate === 'number') {
+                return candidate;
+            }
+        }
+        return null;
+    };
+
+    const left = resolveBound(room.getLeft, room.left, room._x1, room.x1, room.x);
+    const right = resolveBound(room.getRight, room.right, room._x2, room.x2, room.x);
+    const top = resolveBound(room.getTop, room.top, room._y1, room.y1, room.y);
+    const bottom = resolveBound(room.getBottom, room.bottom, room._y2, room.y2, room.y);
+
+    if ([left, right, top, bottom].some(value => typeof value !== 'number')) {
+        return normalizePoint(typeof room.getCenter === 'function' ? room.getCenter() : null);
+    }
+
+    const adjustInterior = (min, max) => {
+        if (max - min >= 2) {
+            return [min + 1, max - 1];
+        }
+        return [Math.min(min, max), Math.max(min, max)];
+    };
+
+    const pickInRange = (min, max) => {
+        if (min > max) {
+            [min, max] = [max, min];
+        }
+
+        if (min === max) {
+            return min;
+        }
+
+        const span = max - min + 1;
+        const roll = rng && typeof rng.getUniform === 'function'
+            ? rng.getUniform()
+            : Math.random();
+        return min + Math.floor(roll * span);
+    };
+
+    const [minX, maxX] = adjustInterior(left, right);
+    const [minY, maxY] = adjustInterior(top, bottom);
+
+    const x = pickInRange(minX, maxX);
+    const y = pickInRange(minY, maxY);
+
+    if (typeof x === 'number' && typeof y === 'number') {
+        return { x, y };
+    }
+
+    return normalizePoint(typeof room.getCenter === 'function' ? room.getCenter() : null);
+}
+
 // Simple distance calculator function
 function calculateDistance(x1, y1, x2, y2) {
     return Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
@@ -181,7 +295,7 @@ function debugPerformance(label, func) {
 
 function inspectObject(obj, maxDepth = 2) {
     if (!DEBUG_MODE) return;
-    
+
     function objToString(o, depth = 0) {
         if (depth > maxDepth) return '{ ... }';
         
@@ -215,6 +329,11 @@ function inspectObject(obj, maxDepth = 2) {
     }
     
     console.log(`Object inspection: ${objToString(obj)}`);
+}
+
+if (typeof window !== 'undefined') {
+    window.normalizePoint = window.normalizePoint || normalizePoint;
+    window.getValidRoomPosition = window.getValidRoomPosition || getValidRoomPosition;
 }
 
 // Game state validation
