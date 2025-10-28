@@ -218,6 +218,100 @@ class DungeonGenerator {
         return { x: position.x, y: position.y };
     }
 
+    getRoomBounds(room) {
+        if (!room) {
+            return null;
+        }
+
+        const resolve = (...candidates) => {
+            for (const candidate of candidates) {
+                if (typeof candidate === 'function') {
+                    try {
+                        const value = candidate.call(room);
+                        if (typeof value === 'number') {
+                            return value;
+                        }
+                    } catch (error) {
+                        // Ignore errors from legacy room implementations
+                    }
+                } else if (typeof candidate === 'number') {
+                    return candidate;
+                }
+            }
+
+            return null;
+        };
+
+        const left = resolve(room.getLeft, room.left, room._x1, room.x1, room.x);
+        const right = resolve(room.getRight, room.right, room._x2, room.x2, room.x);
+        const top = resolve(room.getTop, room.top, room._y1, room.y1, room.y);
+        const bottom = resolve(room.getBottom, room.bottom, room._y2, room.y2, room.y);
+
+        if ([left, right, top, bottom].some(value => typeof value !== 'number')) {
+            return null;
+        }
+
+        return {
+            left: Math.min(left, right),
+            right: Math.max(left, right),
+            top: Math.min(top, bottom),
+            bottom: Math.max(top, bottom)
+        };
+    }
+
+    getRoomRandomPosition(room) {
+        if (!room) {
+            return null;
+        }
+
+        if (typeof room.getRandomPosition === 'function') {
+            const normalized = this.normalizePoint(room.getRandomPosition());
+            if (normalized) {
+                return normalized;
+            }
+        }
+
+        const bounds = this.getRoomBounds(room);
+        if (!bounds) {
+            return this.normalizePoint(room.getCenter && room.getCenter());
+        }
+
+        const adjustInterior = (min, max) => {
+            if (max - min >= 2) {
+                return [min + 1, max - 1];
+            }
+            return [min, max];
+        };
+
+        const pickInRange = (min, max) => {
+            if (min > max) {
+                [min, max] = [max, min];
+            }
+
+            if (min === max) {
+                return min;
+            }
+
+            const span = max - min + 1;
+            const roll = (typeof ROT !== 'undefined' && ROT.RNG)
+                ? ROT.RNG.getUniform()
+                : Math.random();
+            return min + Math.floor(roll * span);
+        };
+
+        const [minX, maxX] = adjustInterior(bounds.left, bounds.right);
+        const [minY, maxY] = adjustInterior(bounds.top, bounds.bottom);
+
+        const x = pickInRange(minX, maxX);
+        const y = pickInRange(minY, maxY);
+
+        if (typeof x === 'number' && typeof y === 'number') {
+            return { x, y };
+        }
+
+        return this.normalizePoint(room.getCenter && room.getCenter());
+    }
+
     selectStairPositions(rooms, map, freeCells, startPosition) {
         const result = { upstairs: null, downstairs: null };
 
@@ -245,7 +339,11 @@ class DungeonGenerator {
             }
 
             for (let attempt = 0; attempt < 10; attempt++) {
-                const pos = this.normalizePoint(room.getRandomPosition());
+                const pos = this.getRoomRandomPosition(room);
+                if (!pos) {
+                    break;
+                }
+
                 const key = `${pos.x},${pos.y}`;
                 if (key === startKey) {
                     continue;
@@ -256,6 +354,10 @@ class DungeonGenerator {
             }
 
             const fallback = this.normalizePoint(room.getCenter());
+            if (!fallback) {
+                return null;
+            }
+
             const fallbackKey = `${fallback.x},${fallback.y}`;
             if (fallbackKey !== startKey && map[fallbackKey] === '.') {
                 return { x: fallback.x, y: fallback.y };
@@ -375,12 +477,11 @@ class DungeonGenerator {
         // Place items in random rooms
         for (let i = 0; i < itemCount; i++) {
             const room = pickRandomElement(rooms);
-            if (!room || typeof room.getRandomPosition !== 'function') {
+            if (!room) {
                 continue;
             }
 
-            const rawPosition = room.getRandomPosition();
-            const position = this.normalizePoint(rawPosition);
+            const position = this.getRoomRandomPosition(room);
             if (!position) {
                 continue;
             }

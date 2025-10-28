@@ -539,6 +539,35 @@ class Game {
         return { x: position.x, y: position.y };
     }
 
+    getRoomRandomPosition(room) {
+        if (!room) {
+            return null;
+        }
+
+        if (this.dungeonGenerator && typeof this.dungeonGenerator.getRoomRandomPosition === 'function') {
+            const generated = this.dungeonGenerator.getRoomRandomPosition(room);
+            if (generated) {
+                return generated;
+            }
+        }
+
+        if (typeof room.getRandomPosition === 'function') {
+            const position = room.getRandomPosition();
+            if (position) {
+                return this.normalizePosition(position);
+            }
+        }
+
+        if (typeof room.getCenter === 'function') {
+            const center = room.getCenter();
+            if (center) {
+                return this.normalizePosition(center);
+            }
+        }
+
+        return null;
+    }
+
     createMonstersForDungeon(dungeon, depth, toGlobal, spawnLocal) {
         if (!dungeon || !dungeon.rooms) {
             return [];
@@ -598,7 +627,11 @@ class Game {
         }
 
         for (let attempt = 0; attempt < 10; attempt++) {
-            const candidate = this.normalizePosition(room.getRandomPosition());
+            const candidate = this.getRoomRandomPosition(room);
+            if (!candidate) {
+                break;
+            }
+
             const key = `${candidate.x},${candidate.y}`;
             if (blocked.has(key)) {
                 continue;
@@ -609,10 +642,15 @@ class Game {
             }
         }
 
-        const center = this.normalizePosition(room.getCenter());
-        const centerKey = `${center.x},${center.y}`;
-        if (!blocked.has(centerKey) && (map[centerKey] === this.FLOOR_TILE || map[centerKey] === '.')) {
-            return center;
+        if (typeof room.getCenter === 'function') {
+            const centerRaw = room.getCenter();
+            if (centerRaw) {
+                const center = this.normalizePosition(centerRaw);
+                const centerKey = `${center.x},${center.y}`;
+                if (!blocked.has(centerKey) && (map[centerKey] === this.FLOOR_TILE || map[centerKey] === '.')) {
+                    return center;
+                }
+            }
         }
 
         return null;
