@@ -1,5 +1,65 @@
 console.log("Initializing DungeonGenerator class");
 
+// Provide compatibility helpers for ROT.js room features across versions
+if (typeof ROT !== 'undefined' && ROT.Map && ROT.Map.Feature && ROT.Map.Feature.Room) {
+    const roomProto = ROT.Map.Feature.Room.prototype;
+
+    if (typeof roomProto.getRandomPosition !== 'function') {
+        console.log("Polyfilling ROT.Map.Feature.Room#getRandomPosition");
+
+        roomProto.getRandomPosition = function() {
+            const left = typeof this.getLeft === 'function' ? this.getLeft() : this._x1;
+            const right = typeof this.getRight === 'function' ? this.getRight() : this._x2;
+            const top = typeof this.getTop === 'function' ? this.getTop() : this._y1;
+            const bottom = typeof this.getBottom === 'function' ? this.getBottom() : this._y2;
+
+            const adjustRange = (min, max) => {
+                if (typeof min !== 'number' || typeof max !== 'number') {
+                    return [min, max];
+                }
+
+                if (max - min >= 2) {
+                    return [min + 1, max - 1];
+                }
+
+                return [min, max];
+            };
+
+            const [minX, maxX] = adjustRange(left, right);
+            const [minY, maxY] = adjustRange(top, bottom);
+
+            const pickInRange = (min, max) => {
+                if (typeof min !== 'number' || typeof max !== 'number' || min > max) {
+                    return null;
+                }
+
+                if (min === max) {
+                    return min;
+                }
+
+                const span = max - min + 1;
+                return min + Math.floor(ROT.RNG.getUniform() * span);
+            };
+
+            const x = pickInRange(minX, maxX);
+            const y = pickInRange(minY, maxY);
+
+            if (x === null || y === null) {
+                const center = typeof this.getCenter === 'function' ? this.getCenter() : [left, top];
+                if (Array.isArray(center)) {
+                    return center;
+                }
+                if (center && typeof center === 'object') {
+                    return [center.x, center.y];
+                }
+                return [left, top];
+            }
+
+            return [x, y];
+        };
+    }
+}
+
 // compact-crawl/dungeons.js - Dungeon generation systems
 class DungeonGenerator {
     constructor(game) {
