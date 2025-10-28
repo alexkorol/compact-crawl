@@ -294,27 +294,50 @@ class DungeonGenerator {
     
     placeItems(level, map, freeCells, rooms) {
         const items = [];
-        
+
         // Determine how many items to place based on level
         const itemCount = getRandomInt(2, 3 + Math.floor(level/2));
-        
+
         // Calculate item probabilities based on level
         const itemWeights = typeof getItemSpawnWeights === 'function'
             ? getItemSpawnWeights(level)
             : this.calculateItemWeights(level);
-        
+
+        if (!Array.isArray(rooms) || rooms.length === 0) {
+            return items;
+        }
+
+        const hasWeights = itemWeights && Object.values(itemWeights).some(weight => weight > 0);
+        if (!hasWeights) {
+            return items;
+        }
+
         // Place items in random rooms
         for (let i = 0; i < itemCount; i++) {
             const room = pickRandomElement(rooms);
-            const position = room.getRandomPosition();
+            if (!room || typeof room.getRandomPosition !== 'function') {
+                continue;
+            }
+
+            const rawPosition = room.getRandomPosition();
+            const position = this.normalizePoint(rawPosition);
+            if (!position) {
+                continue;
+            }
+
             const key = `${position.x},${position.y}`;
-            
+
             // Make sure the position is empty
             if (map[key] === '.') {
                 // Choose an item type based on weights
                 const itemType = this.selectWeightedItem(itemWeights);
+                if (!itemType || !ITEMS[itemType]) {
+                    console.warn('Skipping item placement for unknown type:', itemType);
+                    continue;
+                }
+
                 const itemData = ITEMS[itemType];
-                
+
                 items.push({
                     x: position.x,
                     y: position.y,
@@ -322,12 +345,12 @@ class DungeonGenerator {
                     type: itemData.type || 'misc',
                     ...itemData
                 });
-                
+
                 // Mark the position as having an item (for FOV rendering)
                 map[key] = 'i';
             }
         }
-        
+
         return items;
     }
     
@@ -351,21 +374,36 @@ class DungeonGenerator {
     }
     
     selectWeightedItem(weights) {
+        if (!weights) {
+            return null;
+        }
+
         let total = 0;
         for (let item in weights) {
-            total += weights[item];
+            const weight = weights[item];
+            if (typeof weight !== 'number' || weight <= 0) {
+                continue;
+            }
+            total += weight;
         }
-        
+
+        if (total <= 0) {
+            return null;
+        }
+
         let random = Math.floor(Math.random() * total);
         for (let item in weights) {
-            random -= weights[item];
+            const weight = weights[item];
+            if (typeof weight !== 'number' || weight <= 0) {
+                continue;
+            }
+            random -= weight;
             if (random < 0) {
                 return item;
             }
         }
-        
-        // Fallback
-        return Object.keys(weights)[0];
+
+        return null;
     }
     
     generateMonsters(level, rooms, playerPosition) {

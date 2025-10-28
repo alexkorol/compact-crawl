@@ -17,6 +17,8 @@ class Game {
         this.messageBufferCount = 0;
 
         this.gameOverTimeout = null;
+        this.hudVisible = false;
+        this.menuStatusMessage = null;
 
         this.setupAudio();
         this.rebuildMessageBufferFromHistory(this.messages);
@@ -67,6 +69,7 @@ class Game {
         // Start with title screen
         this.gameState = 'title';
         this.showTitleScreen();
+        this.setHudVisibility(false);
 
         // Fix: Create a dedicated handler for title screen input
         this.titleInputHandler = (e) => {
@@ -82,6 +85,7 @@ class Game {
     }
 
     showTitleScreen() {
+        this.setHudVisibility(false);
         this.display.clear();
         const titleArt = [
             "____                                 _ ",
@@ -119,6 +123,7 @@ class Game {
     // New method to display game mode selection menu
     showGameModeMenu() {
         this.gameState = 'menu';
+        this.setHudVisibility(false);
         this.display.clear();
 
         this.detachMenuInputHandler();
@@ -155,6 +160,16 @@ class Game {
             startY + menuOptions.length * 2 + 2,
             '%c{#999}Press 1, 2, or 3 to select'
         );
+
+        if (this.menuStatusMessage) {
+            const message = this.menuStatusMessage;
+            const messageX = Math.max(0, Math.floor(centerX - message.length / 2));
+            this.display.drawText(
+                messageX,
+                startY + menuOptions.length * 2 + 4,
+                `%c{${CONFIG.colors.ui.warning || '#f55'}}${message}`
+            );
+        }
 
         // Update input handler for menu selection
         window.removeEventListener('keydown', this.titleInputHandler);
@@ -253,6 +268,10 @@ class Game {
         this.inventoryDropMode = false;
         this.closeInventoryUI();
         this.hideSandboxUI();
+        this.player = null;
+        this.gameMode = null;
+        this.setHudVisibility(false);
+        this.menuStatusMessage = null;
 
         this.entities = new Set();
         this.items = [];
@@ -279,6 +298,7 @@ class Game {
         // Change state first
         this.gameState = 'playing';
         this.gameMode = gameMode;
+        this.menuStatusMessage = null;
 
         // Dispatch event for mode change
         const event = new CustomEvent('gameModeChanged', {
@@ -299,6 +319,7 @@ class Game {
         this.inventoryOpen = false;
         this.inventoryDropMode = false;
         this.closeInventoryUI();
+        this.player = null;
 
         try {
             // Get display dimensions
@@ -345,6 +366,7 @@ class Game {
                 throw new Error(`Failed to initialize game mode: ${gameMode}`);
             }
 
+            this.setHudVisibility(true);
             this.updateStats();
 
             this.drawGame();
@@ -370,6 +392,9 @@ class Game {
             this.detachGameInputHandler();
             this.hideSandboxUI();
             this.closeInventoryUI();
+            this.setHudVisibility(false);
+            this.player = null;
+            this.menuStatusMessage = 'Failed to start game mode. Returning to menu.';
             if (typeof this.addMessage === 'function') {
                 this.addMessage('Failed to start game mode. Returning to menu.', CONFIG.colors.ui.warning || '#f55');
             }
@@ -2757,6 +2782,27 @@ class Game {
         this.updateMessageOverlay();
     }
 
+    setHudVisibility(visible) {
+        this.hudVisible = !!visible;
+
+        if (typeof document === 'undefined') {
+            return;
+        }
+
+        if (!this.hudVisible) {
+            const statsOverlay = document.getElementById('stats-overlay');
+            const messageOverlay = document.getElementById('message-overlay');
+
+            if (statsOverlay) {
+                statsOverlay.style.display = 'none';
+            }
+
+            if (messageOverlay) {
+                messageOverlay.style.display = 'none';
+            }
+        }
+    }
+
     shouldUseHtmlHud() {
         if (typeof document === 'undefined') {
             return false;
@@ -2770,15 +2816,13 @@ class Game {
     updateStatsOverlay() {
         const summary = document.getElementById('stats-summary');
         const overlay = document.getElementById('stats-overlay');
-        if (!summary) {
+        if (!summary || !overlay) {
             return;
         }
 
-        if (!this.player) {
+        if (!this.hudVisible || !this.player) {
             summary.innerHTML = '';
-            if (overlay) {
-                overlay.style.display = 'flex';
-            }
+            overlay.style.display = 'none';
             return;
         }
 
@@ -2796,9 +2840,7 @@ class Game {
             .map(segment => `<span class="stat-pill"><span class="label">${segment.label}</span>${segment.value}</span>`)
             .join('');
 
-        if (overlay) {
-            overlay.style.display = 'flex';
-        }
+        overlay.style.display = 'flex';
     }
 
     updateMessageOverlay() {
@@ -2807,9 +2849,16 @@ class Game {
             return;
         }
 
+        if (!this.hudVisible) {
+            container.innerHTML = '';
+            container.style.display = 'none';
+            return;
+        }
+
         const messages = this.getOrderedMessageBuffer();
         if (!messages.length) {
-            container.style.display = 'flex';
+            container.innerHTML = '';
+            container.style.display = 'none';
             return;
         }
 

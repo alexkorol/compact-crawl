@@ -523,5 +523,10 @@ function calculateDistance(x1, y1, x2, y2) {
 }
 
 function pickRandomElement(array) {
-    return array[Math.floor(Math.random() * array.length)];
+    if (!Array.isArray(array) || array.length === 0) {
+        return null;
+    }
+
+    const index = Math.floor(Math.random() * array.length);
+    return array[index];
 }
