@@ -1,164 +1,182 @@
-<!-- compact-crawl/index.html - Main game container with seamless layout -->
+<!-- compact-crawl/index.html - Main game container with retro-inspired layout -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Compact Crawl</title>
-    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400&family=Source+Code+Pro&display=swap" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Inconsolata&family=Roboto+Mono&family=Ubuntu+Mono&display=swap" rel="stylesheet">
     <style>
+        :root {
+            color-scheme: dark;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
         body {
             margin: 0;
             padding: 0;
-            background: radial-gradient(circle at top, #1a1a1a 0%, #080808 60%, #030303 100%);
-            color: #eee;
-            font-family: 'Fira Code', 'Source Code Pro', 'Ubuntu Mono', monospace;
+            background: #000;
+            color: #c7c7c7;
+            font-family: "Lucida Console", "Courier New", monospace;
             display: flex;
             justify-content: center;
             align-items: center;
             min-height: 100vh;
-            overflow: hidden;
         }
 
         #game-container {
-            display: flex;
-            flex-direction: column;
-            width: 96vmin;
-            height: 72vmin; /* 4:3 aspect ratio */
-            max-width: 1200px;
             position: relative;
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            box-shadow: 0 18px 40px rgba(0, 0, 0, 0.6);
-            background: rgba(5, 5, 5, 0.85);
+            display: grid;
+            grid-template-rows: auto 1fr;
+            width: min(120ch, 100vw);
+            max-height: min(92vh, 900px);
+            gap: 6px;
+            padding: 8px;
+            background: #050505;
+            border: 2px solid #333;
+            box-shadow: 0 0 0 4px #000;
         }
 
-        #game-display {
-            flex: 1;
-            background: linear-gradient(180deg, rgba(10, 10, 10, 0.95) 0%, rgba(6, 6, 6, 0.98) 50%, rgba(4, 4, 4, 1) 100%);
-            overflow: hidden;
-            border: 1px solid rgba(255, 255, 255, 0.04);
-        }
-
-        #game-ui {
-            position: absolute;
-            pointer-events: none; /* Let clicks pass through to the game */
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            display: flex;
-            flex-direction: column;
-            z-index: 2; /* Ensure UI is above the game display */
-        }
-        
         #stats-overlay {
-            padding: 10px 14px;
-            background: rgba(0, 0, 0, 0.65);
-            font-size: 0.9em;
-            align-self: flex-end;
-            margin: 10px;
-            border-radius: 6px;
             display: none;
             flex-direction: column;
-            gap: 6px;
-            backdrop-filter: blur(4px);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            pointer-events: auto;
-            box-sizing: border-box;
-            width: clamp(320px, 28vmin, 360px);
-            min-width: clamp(320px, 28vmin, 360px);
-            max-width: clamp(320px, 28vmin, 360px);
-            flex: 0 0 clamp(320px, 28vmin, 360px);
+            gap: 4px;
+            padding: 6px;
+            border: 1px solid #242424;
+            background: #080808;
+            font-size: 0.85rem;
+            line-height: 1.3;
         }
 
         #stats-summary {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-            justify-items: end;
-            gap: 6px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px 10px;
         }
 
         .stat-pill {
-            background: rgba(20, 20, 20, 0.85);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            border-radius: 999px;
-            padding: 4px 10px;
-            color: #ffecb3;
-            text-shadow: 0 0 6px rgba(255, 236, 179, 0.35);
-            letter-spacing: 0.05em;
-            white-space: nowrap;
-            font-variant-numeric: tabular-nums;
-            justify-self: end;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            color: #f0f070;
         }
 
         .stat-pill .label {
-            color: rgba(255, 255, 255, 0.55);
-            margin-right: 4px;
+            color: #6f6f6f;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            font-size: 0.7em;
         }
 
         #player-stats {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            gap: 4px 12px;
-            color: #cfd8dc;
-            font-size: 0.82em;
-            border-top: 1px dashed rgba(255, 255, 255, 0.08);
-            padding-top: 6px;
+            grid-template-columns: repeat(auto-fit, minmax(18ch, 1fr));
+            gap: 2px 12px;
+            font-size: 0.82rem;
         }
 
         .stat-line {
             display: flex;
             justify-content: space-between;
-            gap: 10px;
-            white-space: nowrap;
-            text-shadow: 0 0 4px rgba(0, 0, 0, 0.6);
+            gap: 8px;
         }
 
         .stat-line .label {
-            color: rgba(255, 255, 255, 0.5);
+            color: #8f8f8f;
             letter-spacing: 0.08em;
             text-transform: uppercase;
         }
 
         .stat-line .value {
-            color: #f5f5f5;
+            color: #dcdcdc;
             font-variant-numeric: tabular-nums;
         }
 
         .stat-line .breakdown {
-            color: rgba(255, 255, 255, 0.35);
-            letter-spacing: 0.05em;
+            color: #6f6f6f;
+            font-size: 0.75em;
+        }
+
+        #playfield {
+            display: grid;
+            grid-template-rows: 1fr auto;
+            gap: 6px;
+            min-height: 0;
+        }
+
+        #game-display {
+            border: 1px solid #242424;
+            background: #000;
+            padding: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        canvas {
+            display: block;
+            image-rendering: pixelated;
         }
 
         #message-overlay {
-            margin-top: auto; /* Push to bottom */
-            padding: 12px 14px;
-            background: rgba(0, 0, 0, 0.72);
-            max-height: 150px;
-            overflow-y: auto;
             display: none;
             flex-direction: column;
-            gap: 6px;
-            border-top: 1px solid rgba(255, 255, 255, 0.08);
-            backdrop-filter: blur(3px);
-            border-radius: 0 0 8px 8px;
-            box-shadow: inset 0 8px 20px rgba(0, 0, 0, 0.45);
+            gap: 2px;
+            border: 1px solid #242424;
+            background: #080808;
+            padding: 4px 6px;
+            font-size: 0.8rem;
+            line-height: 1.2;
+            max-height: 8em;
+            overflow-y: auto;
         }
 
-        /* Inventory and skills screens */
+        #message-overlay .message-row {
+            padding: 0;
+            background: none;
+        }
+
+        #message-overlay .severity-warning {
+            color: #ff9a8f;
+        }
+
+        #message-overlay .severity-success {
+            color: #f4f48f;
+        }
+
+        #message-overlay .severity-info {
+            color: #8fd6ff;
+        }
+
+        #message-overlay .severity-default {
+            color: #dcdcdc;
+        }
+
         .game-screen {
             position: absolute;
-            top: 10%;
-            left: 10%;
-            width: 80%;
-            height: 80%;
-            background: rgba(0, 0, 0, 0.9);
-            border: 1px solid #555;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: min(56ch, 90vw);
+            max-height: min(70vh, 32rem);
             padding: 10px;
+            border: 2px solid #444;
+            background: #000;
+            color: #c7c7c7;
             display: none;
-            z-index: 10;
-            pointer-events: auto; /* Make the modal clickable */
+            overflow-y: auto;
+            box-shadow: 0 0 0 4px #050505;
+        }
+
+        .game-screen h2 {
+            margin: 0 0 6px;
+            font-size: 1rem;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: #f0f070;
         }
 
         #inventory-content .inventory-list {
@@ -171,8 +189,8 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 8px;
-            gap: 10px;
+            margin-bottom: 4px;
+            gap: 8px;
         }
 
         #inventory-content .item-label {
@@ -180,222 +198,110 @@
         }
 
         #inventory-content .equipped {
-            color: #5cf;
+            color: #8fd6ff;
         }
 
         #inventory-content .item-actions button {
             margin-left: 4px;
             padding: 2px 6px;
-            background: #333;
-            color: #eee;
-            border: 1px solid #555;
+            background: #111;
+            color: #dcdcdc;
+            border: 1px solid #444;
             cursor: pointer;
-            font-family: monospace;
+            font-family: inherit;
+            font-size: 0.85rem;
         }
 
         #inventory-content .item-actions button:hover {
-            background: #444;
-            border-color: #777;
+            background: #1c1c1c;
+            border-color: #666;
         }
 
         #inventory-content .inventory-hint {
-            margin-top: 12px;
-            color: #aaa;
-            font-size: 0.9em;
-        }
-        
-        canvas {
-            display: block;
-            image-rendering: pixelated;
+            margin-top: 8px;
+            color: #8f8f8f;
+            font-size: 0.85rem;
         }
 
-        #message-overlay .message-row {
-            font-size: 0.85em;
-            line-height: 1.35;
-            opacity: 0.95;
-            padding: 2px 6px;
-            border-radius: 4px;
-            backdrop-filter: blur(2px);
-        }
-
-        #message-overlay .message-row.severity-warning {
-            color: #ffcdd2;
-            background: rgba(183, 28, 28, 0.12);
-        }
-
-        #message-overlay .message-row.severity-success {
-            color: #fff9c4;
-            background: rgba(255, 215, 64, 0.12);
-        }
-
-        #message-overlay .message-row.severity-info {
-            color: #80d8ff;
-            background: rgba(41, 121, 255, 0.12);
-        }
-
-        #message-overlay .message-row.severity-default {
-            color: #eceff1;
-            background: rgba(255, 255, 255, 0.04);
-        }
-
-        /* Additional styles for sandbox mode */
         #sandbox-panel select,
         #sandbox-panel button {
-            background-color: #333;
-            color: #eee;
-            border: 1px solid #555;
-            padding: 3px 8px;
-            margin: 2px;
-            font-family: monospace;
-            font-size: 0.9em;
-        }
-        
-        #sandbox-panel button:hover {
-            background-color: #444;
-            border-color: #888;
-            cursor: pointer;
-        }
-        
-        #sandbox-panel h3, 
-        #sandbox-panel h4 {
-            margin: 5px 0;
-            border-bottom: 1px solid #555;
-            padding-bottom: 3px;
-        }
-        
-        /* Test font display */
-        .font-sample {
-            margin: 10px 0;
-            padding: 5px;
+            background-color: #111;
+            color: #dcdcdc;
             border: 1px solid #444;
-            font-size: 14px;
-            line-height: 1.4;
-        }
-        
-        #sandbox-panel label {
-            display: block;
-            margin: 5px 0;
-        }
-        
-        .sandbox-section {
-            margin-top: 10px;
-            padding: 5px;
-            border: 1px solid #333;
-            border-radius: 3px;
+            padding: 3px 6px;
+            margin: 2px 0;
+            font-family: inherit;
+            font-size: 0.85rem;
         }
 
-        /* Additional styles for font comparison */
-        #font-preview {
-            color: #eee;
-            background: rgba(0, 0, 0, 0.85);
-            border: 1px solid #555;
-            padding: 10px;
-            border-radius: 3px;
-            font-size: 14px;
-        }
-        
-        #font-preview h4 {
-            margin: 5px 0;
-            border-bottom: 1px solid #555;
-            padding-bottom: 3px;
-        }
-        
-        #font-preview button {
-            background-color: #333;
-            color: #eee;
-            border: 1px solid #555;
-            padding: 3px 8px;
-            font-family: monospace;
-            display: block;
-            margin: 5px 0;
+        #sandbox-panel button:hover {
+            background-color: #1c1c1c;
+            border-color: #666;
             cursor: pointer;
         }
-        
-        #font-preview button:hover {
-            background-color: #444;
+
+        #sandbox-panel h3,
+        #sandbox-panel h4 {
+            margin: 6px 0;
+            border-bottom: 1px solid #333;
+            padding-bottom: 3px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
         }
-        
-        /* Preload fonts to ensure they're available */
-        @font-face {
-            font-family: 'DejaVu Sans Mono';
-            src: local('DejaVu Sans Mono');
-            font-display: block;
-        }
-        
-        @font-face {
-            font-family: 'Monaco';
-            src: local('Monaco');
-            font-display: block;
-        }
-        
-        @font-face {
-            font-family: 'Consolas';
-            src: local('Consolas');
-            font-display: block;
-        }
-        
-        @font-face {
-            font-family: 'Courier New';
-            src: local('Courier New');
-            font-display: block;
-        }
-        
-        @font-face {
-            font-family: 'Lucida Console';
-            src: local('Lucida Console');
-            font-display: block;
-        }
-        
-        /* Additional helper classes */
-        .font-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-            gap: 10px;
-            margin-top: 10px;
-        }
-        
-        .font-sample {
-            border: 1px solid #444;
+
+        #font-preview {
+            color: #dcdcdc;
+            background: #050505;
+            border: 1px solid #333;
             padding: 8px;
-            border-radius: 3px;
+            font-size: 0.85rem;
         }
-        
-        .font-name {
-            font-weight: bold;
-            margin-bottom: 5px;
+
+        #font-preview button {
+            background-color: #111;
+            color: #dcdcdc;
+            border: 1px solid #444;
+            padding: 3px 6px;
+            font-family: inherit;
+            margin: 4px 0;
+            cursor: pointer;
+        }
+
+        #font-preview button:hover {
+            background-color: #1c1c1c;
         }
     </style>
 </head>
 <body>
     <div id="game-container">
-        <div id="game-display"></div>
-        
-        <div id="game-ui">
-            <div id="stats-overlay">
-                <div id="stats-summary"></div>
-                <div id="player-stats">Loading...</div>
-            </div>
+        <header id="stats-overlay">
+            <div id="stats-summary"></div>
+            <div id="player-stats">Loading...</div>
+        </header>
+
+        <div id="playfield">
+            <div id="game-display"></div>
             <div id="message-overlay">
                 <div class="message-row severity-default">Welcome to Compact Crawl!</div>
                 <div class="message-row severity-default">Use arrow keys to move.</div>
             </div>
         </div>
-        
+
         <div id="inventory-screen" class="game-screen">
             <h2>Inventory</h2>
             <div id="inventory-content"></div>
             <p>Press [I] to close</p>
         </div>
-        
+
         <div id="skills-screen" class="game-screen">
-            <h2>Skills & Abilities</h2>
+            <h2>Skills &amp; Abilities</h2>
             <div id="skills-content"></div>
             <p>Press [S] to close</p>
         </div>
     </div>
 
     <!-- Add debug controls to HTML -->
-    <div id="debug-panel" style="display: none; position: fixed; bottom: 10px; right: 10px; background: rgba(0,0,0,0.8); border: 1px solid #555; padding: 10px; z-index: 1000;">
+    <div id="debug-panel" style="display: none; position: fixed; bottom: 10px; right: 10px; background: rgba(0,0,0,0.85); border: 1px solid #555; padding: 10px; z-index: 1000;">
         <h3>Debug Controls</h3>
         <button onclick="window.setDebugMode(!window.DEBUG_MODE)">Toggle Debug Mode</button>
         <button onclick="window.game.player.hp = window.game.player.maxHp">Heal Player</button>
@@ -409,7 +315,7 @@
             </label>
         </div>
     </div>
-    <div id="debug-log" style="display: none; position: fixed; top: 10px; right: 10px; width: 300px; height: 200px; background: rgba(0,0,0,0.8); border: 1px solid #555; padding: 10px; overflow-y: auto; z-index: 1000;"></div>
+    <div id="debug-log" style="display: none; position: fixed; top: 10px; right: 10px; width: 300px; height: 200px; background: rgba(0,0,0,0.85); border: 1px solid #555; padding: 10px; overflow-y: auto; z-index: 1000;"></div>
 
     <!-- Load in correct dependency order -->
     <script src="https://cdn.jsdelivr.net/npm/rot-js@2/dist/rot.js"></script>
@@ -442,23 +348,23 @@
             if (typeof compareFonts === 'function') {
                 window.compareFonts = compareFonts;
             }
-            
+
             // Initialize game
             window.game = new Game();
-            
+
             // Clear loading message
             document.getElementById('message-overlay').innerHTML = [
                 '<div class="message-row severity-default">Welcome to Compact Crawl!</div>',
                 '<div class="message-row severity-default">Use arrow keys or hjkl to move.</div>'
             ].join('');
-            
+
             // Add extra help text for game modes
             const helpText = {
                 'main': 'Main Game: Explore the dungeon and survive!',
                 'arena': 'Arena Mode: Fight waves of increasingly tough monsters.',
                 'sandbox': 'Sandbox Mode: Experiment with mechanics using enhanced stats.'
             };
-            
+
             // Listen for game mode changes
             document.addEventListener('gameModeChanged', (e) => {
                 const mode = e.detail.mode;
@@ -478,24 +384,24 @@
                 panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
             }
         });
-        
+
         // Debug logger
         const originalConsoleLog = console.log;
         console.log = function(...args) {
             originalConsoleLog.apply(console, args);
-            
+
             // Add to debug log
             const debugLog = document.getElementById('debug-log');
             if (debugLog) {
                 const message = document.createElement('div');
-                message.textContent = args.map(arg => 
+                message.textContent = args.map(arg =>
                     typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
                 ).join(' ');
                 debugLog.appendChild(message);
-                
+
                 // Scroll to bottom
                 debugLog.scrollTop = debugLog.scrollHeight;
-                
+
                 // Limit number of messages
                 if (debugLog.children.length > 100) {
                     debugLog.removeChild(debugLog.firstChild);
@@ -505,3 +411,4 @@
     </script>
 </body>
 </html>
+
