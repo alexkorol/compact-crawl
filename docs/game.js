@@ -2908,13 +2908,26 @@ class Game {
         }
 
         const messages = this.getOrderedMessageBuffer();
+        const banner = [
+            '  ██████╗ ██████╗ ███╗   ███╗██████╗  █████╗  ██████╗████████╗',
+            ' ██╔════╝██╔═══██╗████╗ ████║██╔══██╗██╔══██╗██╔════╝╚══██╔══╝',
+            ' ██║     ██║   ██║██╔████╔██║██████╔╝███████║██║        ██║   ',
+            ' ██║     ██║   ██║██║╚██╔╝██║██╔══██╗██╔══██║██║        ██║   ',
+            ' ╚██████╗╚██████╔╝██║ ╚═╝ ██║██████╔╝██║  ██║╚██████╗   ██║   ',
+            '  ╚═════╝ ╚═════╝ ╚═╝     ╚═╝╚═════╝ ╚═╝  ╚═╝ ╚═════╝   ╚═╝   ',
+        ].join('\n');
+
+        container.innerHTML = `<pre class="title-banner">${banner}</pre>`;
+
         if (!messages.length) {
-            container.innerHTML = '';
-            container.style.display = 'none';
+            const idle = document.createElement('div');
+            idle.className = 'message-row severity-default';
+            idle.textContent = 'Begin exploring to discover new messages.';
+            container.appendChild(idle);
+            container.style.display = 'flex';
             return;
         }
 
-        container.innerHTML = '';
         messages.forEach(entry => {
             const row = document.createElement('div');
             row.className = `message-row severity-${entry.severity}`;

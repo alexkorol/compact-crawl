@@ -4,8 +4,8 @@ const CONFIG = {
         fontSizeBase: 20,
         fontFamily: "monospace",
         forceSquareRatio: true,
-        bg: "#111",
-        fg: "#eee"
+        bg: "#0b1024",
+        fg: "#e9ecff"
     },
     fov: {
         radius: 8,
@@ -13,35 +13,35 @@ const CONFIG = {
     },
     colors: {
         wall: {
-            visible: "#777",
-            explored: "#444"
+            visible: "#7ef3ff",
+            explored: "#314763"
         },
         floor: {
-            visible: "#222",
-            explored: "#111"
+            visible: "#0f172e",
+            explored: "#0a0f21"
         },
         entities: {
-            player: "#ff0",
+            player: "#7ef3ff",
             monster: {
-                rat: "#a55",
-                snake: "#5a5",
-                goblin: "#5aa",
-                orc: "#595",
-                troll: "#b55"
+                rat: "#f28f6b",
+                snake: "#60d394",
+                goblin: "#7ad6c4",
+                orc: "#9ac46d",
+                troll: "#f26f8b"
             },
             item: {
-                potion: "#f55",
-                weapon: "#aaa",
-                armor: "#a95",
-                scroll: "#55f",
-                food: "#b73"
+                potion: "#ffb25f",
+                weapon: "#d4d9f5",
+                armor: "#a0e3ff",
+                scroll: "#c792ff",
+                food: "#ff8b6a"
             }
         },
         ui: {
-            text: "#fff",
-            highlight: "#ff9",
-            warning: "#f55",
-            info: "#5cf"
+            text: "#e9ecff",
+            highlight: "#7ef3ff",
+            warning: "#ff8b6a",
+            info: "#c792ff"
         }
     },
     audio: {
